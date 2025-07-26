@@ -62,13 +62,13 @@ class Worker:
 
             node = self.robot.node_manager.nodes_dict.find((self.robot.location[0], self.robot.location[1]))
             check = np.array(list(node.data.neighbor_edges_set)).reshape(-1, 2)
-            assert next_location[0] + next_location[1] * 1j in check[:, 0] + check[:, 1] * 1j, print(next_location, self.robot.location, node.data.neighbor_edges_set)
+            assert next_location[0] + next_location[1] * 1j in check[:, 0] + check[:, 1] * 1j, print(self.global_step,next_location, self.robot.location, check)
             assert next_location[0] != self.robot.location[0] or next_location[1] != self.robot.location[1]
 
-            reward = self.env.step(next_location)  # 更新env中的机器人位置、进行新的传感器检测
+            reward = self.env.step(next_location, self.robot.goal_point)  # 更新env中的机器人位置、进行新的传感器检测
 
             self.robot.update_planning_state(self.env.belief_info, self.env.robot_location)
-            if np.linalg.norm(self.robot.location - self.robot.goal_point) < END_MIN_DISTANCE: # np.array_equal(self.robot.location, self.robot.goal_point) self.robot.utility.sum() == 0
+            if np.linalg.norm(self.robot.location - self.robot.goal_point) <= END_MIN_DISTANCE: # np.array_equal(self.robot.location, self.robot.goal_point) self.robot.utility.sum() == 0
                 done = True
                 reward += 20
             self.save_reward_done(reward, done)

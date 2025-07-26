@@ -70,7 +70,7 @@ class Agent:
         self.location = location
         node = self.node_manager.nodes_dict.find(location.tolist())
         if self.node_manager.nodes_dict.__len__() == 0:
-            print("Warning no point is found")
+            # print("Warning no point is found")
             pass
         else:
             # 修改
@@ -382,7 +382,7 @@ class Agent:
         plt.imshow(self.map_info.map, cmap='gray')
         plt.axis('off')
         plt.scatter(nodes[:, 0], nodes[:, 1], c=self.utility, zorder=2)
-        plt.plot(robot[0], robot[1], 'mo', markersize=16, zorder=5)
+        plt.plot(robot[0], robot[1], 'mo', markersize=4, zorder=5)
         plt.plot(goal_cell[0], goal_cell[1], 'ro', markersize=8, zorder=5)
         node = self.node_manager.nodes_dict.find(self.location.tolist()).data
         for neighbor_coords in node.neighbor_edges_set:

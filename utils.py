@@ -278,14 +278,14 @@ def check_collision(start, end, map_info):
     布尔值，表示是否存在碰撞
     """
     # Bresenham line algorithm checking
-    assert start[0] >= map_info.map_origin_x
-    assert start[1] >= map_info.map_origin_y
-    assert end[0] >= map_info.map_origin_x
-    assert end[1] >= map_info.map_origin_y
-    assert start[0] <= map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1]
-    assert start[1] <= map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0]
-    assert end[0] <= map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1],print(map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1])
-    assert end[1] <= map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0],print(map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0])
+    assert start[0] >= map_info.map_origin_x, print(start[0],map_info.map_origin_x)
+    assert start[1] >= map_info.map_origin_y, print(start[1],map_info.map_origin_y)
+    assert end[0] >= map_info.map_origin_x, print(end[0],map_info.map_origin_x)
+    assert end[1] >= map_info.map_origin_y, print(end[1],map_info.map_origin_y)
+    assert start[0] <= map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1],print(start[0],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1])
+    assert start[1] <= map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0],print(start[1],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[0])
+    assert end[0] <= map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1],print(end[0],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1])
+    assert end[1] <= map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0],print(end[1],map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0])
     collision = False
 
     start_cell = get_cell_position_from_coords(start, map_info)
@@ -475,10 +475,10 @@ def visualize_contours(grid_map, visible_graphs):
     plt.show()
 
 def get_nodes_in_range(updating_map_info, nodes_dict):
-    min_x = updating_map_info.map_origin_x + 1
-    min_y = updating_map_info.map_origin_y + 1
-    max_x = min_x + updating_map_info.cell_size * (updating_map_info.map.shape[1] - 1)
-    max_y = min_y + updating_map_info.cell_size * (updating_map_info.map.shape[0] - 1)
+    min_x = updating_map_info.map_origin_x + 2
+    min_y = updating_map_info.map_origin_y + 2
+    max_x = min_x + updating_map_info.cell_size * (updating_map_info.map.shape[1] ) - 2
+    max_y = min_y + updating_map_info.cell_size * (updating_map_info.map.shape[0] ) - 2
 
     # bb = quads.BoundingBox(min_x=center_x - UPDATING_MAP_SIZE // 2 + 2,
     #                        min_y=center_y - UPDATING_MAP_SIZE // 2 + 2,

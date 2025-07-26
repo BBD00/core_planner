@@ -66,12 +66,19 @@ class NodeManager:
         参数:
         node: 要移除的节点
         """
-        for neighbor_edge_coords in node.data.neighbor_edges_set:
+        # for neighbor_edge_coords in node.data.neighbor_edges_set:
+        #     neighbor_node = self.nodes_dict.find(neighbor_edge_coords)
+        #     if neighbor_node:
+        #         neighbor_node.data.neighbor_edges_set.discard((node.data.coords[0],node.data.coords[1]))
+        # self.nodes_dict.remove(node.data.coords.tolist())
+
+        # 创建集合的副本再遍历
+        neighbor_edges_copy = node.data.neighbor_edges_set.copy()
+        for neighbor_edge_coords in neighbor_edges_copy:
             neighbor_node = self.nodes_dict.find(neighbor_edge_coords)
             if neighbor_node:
                 neighbor_node.data.neighbor_edges_set.discard((node.data.coords[0],node.data.coords[1]))
         self.nodes_dict.remove(node.data.coords.tolist())
-
 
     def remove_history_node(self, center_point, new_points):
         """
@@ -104,7 +111,7 @@ class NodeManager:
             # 新策略在范围内的除了特殊点全部移除重新生成
             if not np.array_equal(np.array([px, py]), self.goal_point):
                 points_to_remove.append(point)
-        logger.debug(f"remove lenth/all_len:{len(points_to_remove)}/{len(points_in_range)}")
+        # logger.debug(f"remove lenth/all_len:{len(points_to_remove)}/{len(points_in_range)}")
         for point in points_to_remove:
             node = self.nodes_dict.find(point)
             self.remove_node_from_dict(node)
@@ -150,7 +157,7 @@ class NodeManager:
             all_node_list.append(self.add_node_to_dict(deepcopy(robot_location), frontiers, [], updating_map_info))
         if not self.check_node_exist_in_dict(self.goal_point):
             all_node_list.append(self.add_node_to_dict(self.goal_point, frontiers, [], updating_map_info))
-            logger.debug("goal_point is move")
+            # logger.debug("goal_point is move")
 
         # 更新节点的邻居关系
         for node in all_node_list:  # 遍历所有节点
@@ -414,7 +421,7 @@ class LocalNode:
         if self.utility == 0:
             node_cell = get_cell_position_from_coords(np.array(self.coords), updating_map_info)
             if updating_map_info.map[node_cell[1],node_cell[0]] == FREE:
-                logger.warning(f"the {self.coords} need_update_neighbor {self.need_update_neighbor}")
+                # logger.warning(f"the {self.coords} need_update_neighbor {self.need_update_neighbor}")
                 self.need_update_neighbor = False
 
     def update_node_observable_frontiers(self, frontiers, updating_map_info, map_info):

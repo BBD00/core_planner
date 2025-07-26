@@ -56,7 +56,6 @@ class Env:
         map_dir = f'maps'
         map_list = os.listdir(map_dir)
         map_index = episode_index % np.size(map_list)
-        print(map_index)
         # 读取地图文件、灰度图
         ground_truth = (io.imread(map_dir + '/' + map_list[map_index], 1) * 255).astype(int)
         # 使用block_reduce进行2x2的降采样(取最小值) 最小池化
@@ -83,15 +82,43 @@ class Env:
 
             # 计算实际移动距离（不超过到目标的距离）
             move_distance = min(MOVE_DISTANCE, distance)
-
+            # 计算预期的新位置
+            new_location = self.robot_location + unit_direction * move_distance
+            new_location = np.round(new_location)
+            # 计算新位置对应的栅格坐标
+            new_cell = np.array([round((new_location[0] - self.belief_origin_x) / self.cell_size),
+                             round((new_location[1] - self.belief_origin_y) / self.cell_size)])
+        
+            # 检查新位置是否在地图范围内且是可通行的
+            if  self.ground_truth[new_cell[1], new_cell[0]] == FREE:
+                # 位置有效，更新机器人位置
+                self.robot_location = new_location
+            else:
+                # 如果目标位置不可通行，可以选择:
+                # 沿着原方向移动直到碰到障碍物前一个点
+                
+                # 沿原方向逐步尝试，找到最远的可通行点
+                for step in range(int(move_distance), 0, -1):
+                    test_location = self.robot_location + unit_direction * step
+                    test_location = np.round(test_location)
+                    test_cell = np.array([round((test_location[0] - self.belief_origin_x) / self.cell_size),
+                                        round((test_location[1] - self.belief_origin_y) / self.cell_size)])
+                    
+                    if (0 <= test_cell[0] < self.ground_truth.shape[1] and 
+                        0 <= test_cell[1] < self.ground_truth.shape[0] and
+                        self.ground_truth[test_cell[1], test_cell[0]] == FREE):
+                        self.robot_location = test_location
+                        break
+            
             # 更新机器人位置
-            self.robot_location += unit_direction * move_distance
-            self.robot_location = np.round(self.robot_location)
+            # self.robot_location += unit_direction * move_distance
+            # self.robot_location = np.round(self.robot_location)
 
 
         # self.robot_location = robot_location
         self.robot_cell = np.array([round((robot_location[0] - self.belief_origin_x) / self.cell_size),
                                     round((robot_location[1] - self.belief_origin_y) / self.cell_size)])
+        assert self.ground_truth[self.robot_cell[1],self.robot_cell[0]] == FREE, "Robot in obstacle!"
         if self.plot:
             self.trajectory_x.append(self.robot_location[0])
             self.trajectory_y.append(self.robot_location[1])
@@ -100,18 +127,20 @@ class Env:
         self.robot_belief = sensor_work(self.robot_cell, round(self.sensor_range / self.cell_size), self.robot_belief,
                                         self.ground_truth)
 
-    def calculate_reward(self, dist):
+    def calculate_reward(self, dist, goal_point):
         reward = 0
         reward -= dist / UPDATING_MAP_SIZE * 5
 
         global_frontiers = get_frontier_in_map(self.belief_info)
-        if len(global_frontiers) == 0:
-            delta_num = len(self.global_frontiers)
-        else:
-            observed_frontiers = self.global_frontiers - global_frontiers
-            delta_num = len(observed_frontiers)
+        # if len(global_frontiers) == 0:
+        #     delta_num = len(self.global_frontiers)
+        # else:
+        #     observed_frontiers = self.global_frontiers - global_frontiers
+        #     delta_num = len(observed_frontiers)
 
-        reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
+        # reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
+
+        reward += np.linalg.norm(self.robot_location - goal_point) / 50
 
         self.global_frontiers = global_frontiers
         self.old_belief = deepcopy(self.robot_belief)
@@ -121,7 +150,7 @@ class Env:
     def evaluate_exploration_rate(self):
         self.explored_rate = np.sum(self.robot_belief == 255) / np.sum(self.ground_truth == 255)
 
-    def step(self, next_waypoint):
+    def step(self, next_waypoint, goal_point):
         """
         执行环境的一步更新
 
@@ -139,7 +168,7 @@ class Env:
         # 计算当前探索率
         self.evaluate_exploration_rate()
 
-        reward = self.calculate_reward(dist)
+        reward = self.calculate_reward(dist, goal_point)
 
         return reward
 

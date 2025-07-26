@@ -1,6 +1,9 @@
 logs/
-carla_dataset
+model/
+train/
 log/
 *.pt
 *.csv
 *.pth
+*.log
+*.png
