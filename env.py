@@ -116,8 +116,8 @@ class Env:
 
 
         # self.robot_location = robot_location
-        self.robot_cell = np.array([round((robot_location[0] - self.belief_origin_x) / self.cell_size),
-                                    round((robot_location[1] - self.belief_origin_y) / self.cell_size)])
+        self.robot_cell = np.array([round((self.robot_location[0] - self.belief_origin_x) / self.cell_size),
+                                round((self.robot_location[1] - self.belief_origin_y) / self.cell_size)])
         assert self.ground_truth[self.robot_cell[1],self.robot_cell[0]] == FREE, "Robot in obstacle!"
         if self.plot:
             self.trajectory_x.append(self.robot_location[0])
