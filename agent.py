@@ -9,6 +9,8 @@ import copy
 from utils import *
 from parameter import *
 from node_manager import NodeManager
+import pickle
+import datetime
 
 
 class Agent:
@@ -342,10 +344,53 @@ class Agent:
         _, _, _, _, current_edge, _ = observation
         with torch.no_grad():
             logp = self.policy_net(*observation)
-
-        action_index = torch.multinomial(logp.exp(), 1).long().squeeze(1)
+        # 修改代码，这里会有数值BUG尽管都是-1e8还是会采样到
+        valid_mask = logp > -1e7  # 新增
+        safe_logp = logp.masked_fill(~valid_mask, -float('inf'))    # 新增
+        probs = safe_logp.softmax(dim=-1)  # 新增
+        # action_index = torch.multinomial(logp.exp(), 1).long().squeeze(1)
+        action_index = torch.multinomial(probs, 1).long().squeeze(1)
         next_node_index = current_edge[0, action_index.item(), 0].item()
         next_position = self.node_coords[next_node_index]
+
+        # 调试信息准备
+        node = self.node_manager.nodes_dict.find((self.location[0], self.location[1]))
+        check = np.array(list(node.data.neighbor_edges_set)).reshape(-1, 2)
+        # 检查条件
+        next_pos_complex = next_position[0] + next_position[1] * 1j
+        check_complex = check[:, 0] + check[:, 1] * 1j
+        condition = next_pos_complex in check_complex
+        
+        # 当断言失败时保存详细信息
+        if not condition:
+            # 准备错误信息
+            error_info = {
+                "next_position": next_position,
+                "current_location": self.location,
+                "neighbor_edges_set": node.data.neighbor_edges_set,
+                "logp": logp,
+                "action_index": action_index,
+                "current_edge": current_edge,
+                "observation": observation,
+                "node_coords": self.node_coords,
+                "policy_net_state": self.policy_net.state_dict(),
+                "timestamp": datetime.datetime.now(),
+                "map_info": self.map_info,
+                "updating_map_info": self.updating_map_info
+            }
+            
+            # 保存为Pickle文件
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"assert_error_{timestamp}.pkl"
+            with open(filename, 'wb') as f:
+                pickle.dump(error_info, f)
+            
+            # 打印提示信息
+            print(f"Assertion failed! Full debug info saved to {filename}")
+        
+        # 原始断言
+        assert condition, print(next_position, self.location, node.data.neighbor_edges_set, logp)
+
 
         return next_position, action_index
 

@@ -323,7 +323,7 @@ def check_collision(start, end, map_info):
     return collision
 
 
-def make_gif(path, n, frame_files, rate):
+def make_gif(path, n, frame_files, rate, done=None):
     """
     创建GIF动画展示探索过程
 
@@ -338,7 +338,7 @@ def make_gif(path, n, frame_files, rate):
         for frame in frame_files:
             image = imageio.imread(frame)
             writer.append_data(image)
-    print('gif complete\n')
+    print(f'{n} gif complete success:{done}\n')
 
     # Remove files
     for filename in frame_files[:-1]:

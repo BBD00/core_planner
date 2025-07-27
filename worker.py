@@ -52,9 +52,8 @@ class Worker:
             self.robot.plot_env()
             self.env.plot_env(0)
 
-
         for i in range(MAX_EPISODE_STEP):
-
+            # try:
             self.save_observation(observation)
 
             next_location, action_index = self.robot.select_next_waypoint(observation)
@@ -65,7 +64,7 @@ class Worker:
             assert next_location[0] + next_location[1] * 1j in check[:, 0] + check[:, 1] * 1j, print(self.global_step,next_location, self.robot.location, check)
             assert next_location[0] != self.robot.location[0] or next_location[1] != self.robot.location[1]
 
-            reward = self.env.step(next_location, self.robot.goal_point)  # 更新env中的机器人位置、进行新的传感器检测
+            reward = self.env.step(next_location, self.robot.goal_point, self.robot.updating_map_info)  # 更新env中的机器人位置、进行新的传感器检测
 
             self.robot.update_planning_state(self.env.belief_info, self.env.robot_location)
             if np.linalg.norm(self.robot.location - self.robot.goal_point) <= END_MIN_DISTANCE: # np.array_equal(self.robot.location, self.robot.goal_point) self.robot.utility.sum() == 0
@@ -83,6 +82,8 @@ class Worker:
 
             if done:
                 break
+            # except:
+            #     break
 
         # save metrics
         self.perf_metrics['travel_dist'] = self.env.travel_dist
@@ -91,7 +92,9 @@ class Worker:
 
         # save gif
         if self.save_image:
-            make_gif(gifs_path, self.global_step, self.env.frame_files, self.env.explored_rate)
+            make_gif(gifs_path, self.global_step, self.env.frame_files, self.env.explored_rate, done)
+        else:
+            print(f'{self.global_step} complete | success:{done}\n')
 
     def save_observation(self, observation):
         node_inputs, node_padding_mask, edge_mask, current_index, current_edge, edge_padding_mask = observation

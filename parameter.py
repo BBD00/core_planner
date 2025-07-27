@@ -26,7 +26,7 @@ MIN_UTILITY = 2  # ignore the utility if observable frontiers are less than this
 
 # 车辆移动距距离
 MOVE_DISTANCE = 5   # meter
-END_MIN_DISTANCE = 1 # meter判断结束的距离
+END_MIN_DISTANCE = 2 # meter判断结束的距离
 
 # updating map range w.r.t the robot
 UPDATING_MAP_SIZE = 4 * SENSOR_RANGE + 4 * NODE_RESOLUTION  # nodes outside this range will not be affected by current measurements 80

@@ -7,3 +7,5 @@ log/
 *.pth
 *.log
 *.png
+*.pkl
+*.gif

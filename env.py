@@ -7,6 +7,8 @@ from copy import deepcopy
 
 from sensor import sensor_work
 from utils import *
+import pickle
+import datetime
 
 
 class Env:
@@ -69,8 +71,22 @@ class Env:
         ground_truth = ground_truth * 254 + 1
 
         return ground_truth, robot_cell
+    
+    def debug_save_info(self, map_info, temp_info, updating_map_info, new_cell):
+        error_info = {
+                "map_info": map_info,
+                "temp_info": temp_info,
+                "updating_map_info": updating_map_info,
+                "new_cell": new_cell
+            }
+        
+        # 保存为Pickle文件
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"assert_error_update_{timestamp}.pkl"
+        with open(filename, 'wb') as f:
+            pickle.dump(error_info, f)
 
-    def update_robot_location(self, robot_location):
+    def update_robot_location(self, robot_location, updating_map_info):
         # 计算从当前位置到目标位置的方向向量
         direction = np.array(robot_location) - self.robot_location
         distance = np.linalg.norm(direction)
@@ -86,11 +102,12 @@ class Env:
             new_location = self.robot_location + unit_direction * move_distance
             new_location = np.round(new_location)
             # 计算新位置对应的栅格坐标
-            new_cell = np.array([round((new_location[0] - self.belief_origin_x) / self.cell_size),
+            new_cell_global = np.array([round((new_location[0] - self.belief_origin_x) / self.cell_size),
                              round((new_location[1] - self.belief_origin_y) / self.cell_size)])
+            new_cell = get_cell_position_from_coords(new_location, updating_map_info)
         
             # 检查新位置是否在地图范围内且是可通行的
-            if  self.ground_truth[new_cell[1], new_cell[0]] == FREE:
+            if  updating_map_info.map[new_cell[1], new_cell[0]] == FREE and self.ground_truth[new_cell_global[1], new_cell_global[0]] == FREE:
                 # 位置有效，更新机器人位置
                 self.robot_location = new_location
             else:
@@ -103,9 +120,9 @@ class Env:
                     test_location = np.round(test_location)
                     test_cell = np.array([round((test_location[0] - self.belief_origin_x) / self.cell_size),
                                         round((test_location[1] - self.belief_origin_y) / self.cell_size)])
+                    new_cell = get_cell_position_from_coords(new_location, updating_map_info)
                     
-                    if (0 <= test_cell[0] < self.ground_truth.shape[1] and 
-                        0 <= test_cell[1] < self.ground_truth.shape[0] and
+                    if (updating_map_info.map[new_cell[1], new_cell[0]] == FREE and
                         self.ground_truth[test_cell[1], test_cell[0]] == FREE):
                         self.robot_location = test_location
                         break
@@ -118,7 +135,11 @@ class Env:
         # self.robot_location = robot_location
         self.robot_cell = np.array([round((self.robot_location[0] - self.belief_origin_x) / self.cell_size),
                                 round((self.robot_location[1] - self.belief_origin_y) / self.cell_size)])
-        assert self.ground_truth[self.robot_cell[1],self.robot_cell[0]] == FREE, "Robot in obstacle!"
+        try:
+            assert self.ground_truth[self.robot_cell[1],self.robot_cell[0]] == FREE, print(f"Robot in obstacle!{self.robot_cell},{self.robot_location}")
+        except AssertionError:
+            self.debug_save_info(self.ground_truth_info, self.belief_info, updating_map_info, new_cell)  # 只有断言失败时才会执行
+            raise  # 可选：重新抛出异常，让上层代码知道发生了错误
         if self.plot:
             self.trajectory_x.append(self.robot_location[0])
             self.trajectory_y.append(self.robot_location[1])
@@ -132,15 +153,15 @@ class Env:
         reward -= dist / UPDATING_MAP_SIZE * 5
 
         global_frontiers = get_frontier_in_map(self.belief_info)
-        # if len(global_frontiers) == 0:
-        #     delta_num = len(self.global_frontiers)
-        # else:
-        #     observed_frontiers = self.global_frontiers - global_frontiers
-        #     delta_num = len(observed_frontiers)
+        if len(global_frontiers) == 0:
+            delta_num = len(self.global_frontiers)
+        else:
+            observed_frontiers = self.global_frontiers - global_frontiers
+            delta_num = len(observed_frontiers)
 
-        # reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
+        reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
 
-        reward += np.linalg.norm(self.robot_location - goal_point) / 50
+        reward += min(1 / (np.linalg.norm(self.robot_location - goal_point) + 1e-10) * 10, 10)
 
         self.global_frontiers = global_frontiers
         self.old_belief = deepcopy(self.robot_belief)
@@ -150,7 +171,7 @@ class Env:
     def evaluate_exploration_rate(self):
         self.explored_rate = np.sum(self.robot_belief == 255) / np.sum(self.ground_truth == 255)
 
-    def step(self, next_waypoint, goal_point):
+    def step(self, next_waypoint, goal_point, updating_map_info):
         """
         执行环境的一步更新
 
@@ -159,8 +180,8 @@ class Env:
             agent_id: 执行动作的智能体ID
         """
         dist = np.linalg.norm(self.robot_location - next_waypoint)
-        # 更新指定智能体的位置
-        self.update_robot_location(next_waypoint)
+        # 更新指定智能体的位置 这里增加了用updating_map_info来判断是否进入障碍物
+        self.update_robot_location(next_waypoint, updating_map_info)
         # 更新新的传感器
         self.update_robot_belief()
 
