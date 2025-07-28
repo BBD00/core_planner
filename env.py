@@ -15,6 +15,7 @@ class Env:
     def __init__(self, episode_index, plot=False):
         self.episode_index = episode_index
         self.plot = plot
+        self.stagnation_time = 0    # 停滞时间
         # 导入地面真值地图(1 or 255)和初始机器人单元格位置 255白色为可通行 initial_cell为大于0数
         self.ground_truth, self.robot_cell = self.import_ground_truth(episode_index)
         self.ground_truth_size = np.shape(self.ground_truth)  # cell
@@ -41,8 +42,8 @@ class Env:
 
         if self.plot:
             self.frame_files = []
-            self.trajectory_x = [self.robot_location[0]]
-            self.trajectory_y = [self.robot_location[1]]
+        self.trajectory_x = [self.robot_location[0]]
+        self.trajectory_y = [self.robot_location[1]]
 
     def import_ground_truth(self, episode_index):
         """
@@ -150,8 +151,7 @@ class Env:
 
     def calculate_reward(self, dist, goal_point):
         reward = 0
-        reward -= dist / UPDATING_MAP_SIZE * 5
-
+        # reward -= dist / UPDATING_MAP_SIZE * 5
         global_frontiers = get_frontier_in_map(self.belief_info)
         if len(global_frontiers) == 0:
             delta_num = len(self.global_frontiers)
@@ -162,6 +162,24 @@ class Env:
         reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
 
         reward += min(1 / (np.linalg.norm(self.robot_location - goal_point) + 1e-10) * 10, 10)
+        # 增加停滞惩罚
+        if len(self.trajectory_x) >= 1:
+            prev_x, prev_y = self.trajectory_x[-1], self.trajectory_y[-1]
+            current_x, current_y = self.robot_location[0], self.robot_location[1]
+            movement = np.hypot(current_x-prev_x, current_y-prev_y)
+            # 距离惩罚
+            reward -= movement / UPDATING_MAP_SIZE * 5
+            
+            # 累积停滞时间
+            if movement < STAGNATION_THRESHOLD:
+                self.stagnation_time += 1
+            else:
+                self.stagnation_time = 0
+            
+            # 对长时间停滞施加指数惩罚
+            if self.stagnation_time > 2:  # 连续5步停滞
+                reward -= 2 ** (self.stagnation_time - 2)  # 2^0, 2^1, 2^2...
+        # reward -= min(1 / (np.linalg.norm(self.robot_location - np.array(self.trajectory_x[-1], self.trajectory_y[-1])) + 1e-10) * 5, 5)
 
         self.global_frontiers = global_frontiers
         self.old_belief = deepcopy(self.robot_belief)

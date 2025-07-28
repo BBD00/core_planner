@@ -293,21 +293,10 @@ class Agent:
             采样点的坐标列表（格式：[[x1,y1], [x2,y2], ...]）
         """
         ground_truth_map = ground_truth_map_info.map
-        # fig, ax = plt.subplots()
-        # ax.imshow(ground_truth_map, cmap="gray")
-        # 以robot_cell为中心绘制矩形框
-        # rect_size = 100  # 矩形框的大小
-        # rect_x = max(0, robot_cell[0] - rect_size // 2)  # 确保矩形不超出地图边界
-        # rect_y = max(0, robot_cell[1] - rect_size // 2)
-        # rect = patches.Rectangle((rect_x, rect_y), rect_size, rect_size,
-        #                          linewidth=2, edgecolor='r', facecolor='none')
-        # ax.add_patch(rect)
-        # 标记robot_cell中心
-        # ax.plot(robot_cell[0], robot_cell[1], 'bo', markersize=5)
-        # 恢复并锁定坐标轴范围为原始地图范围
-
         # 获取所有可行点的网格坐标（y,x格式）
-        free_points = np.argwhere(ground_truth_map == 255)
+        free_points_all = np.argwhere(ground_truth_map == 255)
+        # 初始化过滤后的点集
+        free_points = free_points_all
         # 如果指定了距离约束，过滤符合条件的点
         if distance is not None:
             robot_yx = np.array([robot_cell[1], robot_cell[0]])  # 转换为(y,x)格式
@@ -315,26 +304,13 @@ class Agent:
             free_points = free_points[distances >= distance]
         # 随机选择点
         if len(free_points) == 0:
-            assert print("error")
-            print("警告: 没有符合条件的可行点!")
-            self.goal_point = None
-            return []
+            print("警告: 没有符合条件的可行点!, 随机生成目标点")
+            selected_indices = np.random.choice(len(free_points_all), 1, replace=False)
+            selected_points = free_points_all[selected_indices]
+        else:
+            selected_indices = np.random.choice(len(free_points), 1, replace=False)
+            selected_points = free_points[selected_indices]
 
-        selected_indices = np.random.choice(len(free_points), 1, replace=False)
-        selected_points = free_points[selected_indices]
-
-        # 转换坐标格式：从[y,x]到[x,y]
-        # grid_points = selected_points[:, [1, 0]][0]
-        # 存储第一个采样点为目标点
-        # if len(grid_points) > 0:
-            # 在图上标记目标点
-            # ax.plot(grid_points[0], grid_points[1], 'go', markersize=5)
-        # # 显示图像
-        # plt.title('Goal Point Sampling')
-        # plt.xlabel('X')
-        # plt.ylabel('Y')
-        # plt.grid(True, linestyle='--', alpha=0.7)
-        # plt.show()
 
         self.goal_point = get_coords_from_cell_position(selected_points[:, [1, 0]], ground_truth_map_info)
         self.node_manager.goal_point = self.goal_point
@@ -344,14 +320,45 @@ class Agent:
         _, _, _, _, current_edge, _ = observation
         with torch.no_grad():
             logp = self.policy_net(*observation)
-        # 修改代码，这里会有数值BUG尽管都是-1e8还是会采样到
-        valid_mask = logp > -1e7  # 新增
-        safe_logp = logp.masked_fill(~valid_mask, -float('inf'))    # 新增
-        probs = safe_logp.softmax(dim=-1)  # 新增
-        # action_index = torch.multinomial(logp.exp(), 1).long().squeeze(1)
-        action_index = torch.multinomial(probs, 1).long().squeeze(1)
-        next_node_index = current_edge[0, action_index.item(), 0].item()
-        next_position = self.node_coords[next_node_index]
+        # TODO 修改代码，这里会有pytorch BUG尽管都是-1e8还是会采样到因此只采用有概率的元素进行采样
+        # valid_mask = logp > -1e7  # 新增
+        # safe_logp = logp.masked_fill(~valid_mask, -float('inf'))    # 新增
+        # probs = safe_logp.softmax(dim=-1)  # 新增
+        # # action_index = torch.multinomial(logp.exp(), 1).long().squeeze(1)
+        # action_index = torch.multinomial(probs, 1).long().squeeze(1)
+        # next_node_index = current_edge[0, action_index.item(), 0].item()
+        # next_position = self.node_coords[next_node_index]
+        # 新方法
+        # 获取有效动作的索引
+        try:
+            valid_indices = torch.where(logp > -1e7)[1]
+            if len(valid_indices) == 0:
+                valid_indices = torch.tensor([0], device=logp.device)
+            # 只计算有效动作的概率
+            valid_logp = logp[:, valid_indices]
+            valid_probs = valid_logp.softmax(dim=-1)
+            # 从有效动作中采样
+            sampled_idx = torch.multinomial(valid_probs, 1).long().squeeze(1)
+            action_index = valid_indices[sampled_idx]
+            next_node_index = current_edge[0, action_index.item(), 0].item()
+            next_position = self.node_coords[next_node_index]
+        except:
+            # 保存为Pickle文件
+            error_info = {
+                "current_location": self.location,
+                "logp": logp,
+                "current_edge": current_edge,
+                "observation": observation,
+                "node_coords": self.node_coords,
+                "policy_net_state": self.policy_net.state_dict(),
+                "timestamp": datetime.datetime.now(),
+                "map_info": self.map_info,
+                "updating_map_info": self.updating_map_info,
+            }
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"assert_error_pro_{timestamp}.pkl"
+            with open(filename, 'wb') as f:
+                pickle.dump(error_info, f)
 
         # 调试信息准备
         node = self.node_manager.nodes_dict.find((self.location[0], self.location[1]))
@@ -359,6 +366,7 @@ class Agent:
         # 检查条件
         next_pos_complex = next_position[0] + next_position[1] * 1j
         check_complex = check[:, 0] + check[:, 1] * 1j
+        # while next_pos_complex in check_complex:
         condition = next_pos_complex in check_complex
         
         # 当断言失败时保存详细信息
@@ -376,7 +384,7 @@ class Agent:
                 "policy_net_state": self.policy_net.state_dict(),
                 "timestamp": datetime.datetime.now(),
                 "map_info": self.map_info,
-                "updating_map_info": self.updating_map_info
+                "updating_map_info": self.updating_map_info,
             }
             
             # 保存为Pickle文件
