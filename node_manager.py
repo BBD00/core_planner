@@ -158,6 +158,13 @@ class NodeManager:
         if not self.check_node_exist_in_dict(self.goal_point):
             all_node_list.append(self.add_node_to_dict(self.goal_point, frontiers, [], updating_map_info))
             # logger.debug("goal_point is move")
+        # 增加cluster的聚类节点
+        if frontiers:
+            cluster_points = cluster_frontiers(frontiers)
+            for points in cluster_points:
+                points = np.array(points)
+                if np.linalg.norm(robot_location - points) < UPDATING_MAP_SIZE-1:
+                    all_node_list.append(self.add_node_to_dict(points, frontiers, [], updating_map_info))
 
         # 更新节点的邻居关系
         for node in all_node_list:  # 遍历所有节点

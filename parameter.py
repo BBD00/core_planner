@@ -34,8 +34,8 @@ UPDATING_MAP_SIZE = 4 * SENSOR_RANGE + 4 * NODE_RESOLUTION  # nodes outside this
 # 地图可视点更新容忍值
 TOLERANCE = 0.1
 
-# 车辆停滞惩罚
-STAGNATION_THRESHOLD = 0.5
+# 车辆停滞惩罚阈值
+STAGNATION_THRESHOLD = 0.1
 
 # training parameters
 MAX_EPISODE_STEP = 200  #128

@@ -163,8 +163,8 @@ class Env:
 
         reward += min(1 / (np.linalg.norm(self.robot_location - goal_point) + 1e-10) * 10, 10)
         # 增加停滞惩罚
-        if len(self.trajectory_x) >= 1:
-            prev_x, prev_y = self.trajectory_x[-1], self.trajectory_y[-1]
+        if len(self.trajectory_x) >= 2:
+            prev_x, prev_y = self.trajectory_x[-2], self.trajectory_y[-2]
             current_x, current_y = self.robot_location[0], self.robot_location[1]
             movement = np.hypot(current_x-prev_x, current_y-prev_y)
             # 距离惩罚
@@ -177,8 +177,9 @@ class Env:
                 self.stagnation_time = 0
             
             # 对长时间停滞施加指数惩罚
-            if self.stagnation_time > 2:  # 连续5步停滞
-                reward -= 2 ** (self.stagnation_time - 2)  # 2^0, 2^1, 2^2...
+            if self.stagnation_time > 5:  # 连续5步停滞
+                reward -= max(0.5 * (self.stagnation_time - 5), 10)  # 2^0, 2^1, 2^2...
+                # print(f"{self.episode_index}触发停滞,now{current_x, current_y},pre{prev_x, prev_y}")
         # reward -= min(1 / (np.linalg.norm(self.robot_location - np.array(self.trajectory_x[-1], self.trajectory_y[-1])) + 1e-10) * 5, 5)
 
         self.global_frontiers = global_frontiers

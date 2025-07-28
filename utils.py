@@ -8,6 +8,7 @@ from parameter import *
 import matplotlib.pyplot as plt
 import cv2
 from itertools import combinations
+from collections import deque
 
 
 def get_cell_position_from_coords(coords, map_info, check_negative=True):
@@ -239,6 +240,61 @@ def frontier_down_sample(data, voxel_size=FRONTIER_CELL_SIZE):
 
     downsampled_data = set(map(tuple, voxel_dict.values()))
     return downsampled_data
+
+def cluster_frontiers(frontier_set, distance_threshold=2.0, min_points=5):
+    """
+    聚合离散的frontier点，忽略小簇
+
+    参数:
+        frontier_set: 包含frontier点的集合，每个点是二维坐标 (x, y)
+        distance_threshold: 两个点被视为属于同一聚类的最大距离
+        min_points: 簇的最小点数阈值（点数小于此值的簇将被忽略）
+
+    返回:
+        clustered_frontiers: 聚类后的frontier点集合
+    """
+    if not frontier_set:
+        return set()
+
+    points = list(frontier_set)
+    n = len(points)
+    visited = [False] * n
+    clusters = []
+    sq_threshold = distance_threshold ** 2  # 使用平方距离避免开方计算
+
+    # 优化的距离计算函数
+    def within_threshold(i, j):
+        dx = points[i][0] - points[j][0]
+        dy = points[i][1] - points[j][1]
+        return dx * dx + dy * dy <= sq_threshold
+
+    for i in range(n):
+        if visited[i]:
+            continue
+
+        cluster = []
+        queue = deque([i])
+        visited[i] = True
+
+        while queue:
+            idx = queue.popleft()  # O(1)操作
+            cluster.append(points[idx])
+
+            for j in range(n):
+                if not visited[j] and within_threshold(idx, j):
+                    visited[j] = True
+                    queue.append(j)
+
+        clusters.append(cluster)
+
+    # 高效计算质心
+    centroids = set()
+    for cluster in clusters:
+        if len(cluster) >= min_points:
+            arr = np.array(cluster)
+            centroids.add(tuple(arr.mean(axis=0)))
+
+    return centroids
 
 def is_frontier(location, map_info):
     """

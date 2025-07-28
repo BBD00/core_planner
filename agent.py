@@ -333,7 +333,10 @@ class Agent:
         try:
             valid_indices = torch.where(logp > -1e7)[1]
             if len(valid_indices) == 0:
-                valid_indices = torch.tensor([0], device=logp.device)
+                print(f"very error {logp}")
+                edge_num = torch.sum(current_edge > 0)
+                valid_indices = torch.tensor(torch.arange(edge_num), device=logp.device)
+                logp = torch.ones(1,edge_num)
             # 只计算有效动作的概率
             valid_logp = logp[:, valid_indices]
             valid_probs = valid_logp.softmax(dim=-1)
