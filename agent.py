@@ -40,7 +40,7 @@ class Agent:
         self.node_manager = NodeManager(plot=self.plot)
 
         # graph
-        self.node_coords, self.utility, self.guidepost, self.goal_distance = None, None, None, None
+        self.node_coords, self.utility, self.guidepost, self.goal_distance, self.stay_count = None, None, None, None, None
         self.current_index, self.adjacent_matrix, self.neighbor_indices = None, None, None
 
         # self.travel_dist = 0
@@ -49,9 +49,8 @@ class Agent:
         # for i in range(15):
         #     self.episode_buffer.append([])
         #
-        # if self.plot:
-        #     self.trajectory_x = []
-        #     self.trajectory_y = []
+        self.trajectory_x = []
+        self.trajectory_y = []
 
     def update_map(self, map_info):
         # no need in training because of shallow copy
@@ -69,14 +68,9 @@ class Agent:
             location: 新位置坐标
         """
         self.location = location
-        node = self.node_manager.nodes_dict.find(location.tolist())
-        if self.node_manager.nodes_dict.__len__() == 0:
-            # print("Warning no point is found")
-            pass
-        else:
-            # 修改
-            # node.data.set_visited()
-            pass
+        self.trajectory_x.append(location[0])
+        self.trajectory_y.append(location[1])
+
     def update_frontiers(self):
         """在局部地图中更新边界点集合(探索的候选点)"""
         self.frontier = get_frontier_in_map(self.updating_map_info)
@@ -158,7 +152,7 @@ class Agent:
                                        self.frontier,
                                        self.updating_map_info,
                                        self.map_info)
-        self.node_coords, self.utility, self.goal_distance, self.adjacent_matrix, self.current_index, self.neighbor_indices = \
+        self.node_coords, self.utility, self.goal_distance, self.stay_count, self.adjacent_matrix, self.current_index, self.neighbor_indices = \
             self.update_observation()
 
     def update_observation(self):
@@ -171,7 +165,7 @@ class Agent:
         占用情况：-1代表自己，1代表其他机器人
 
         返回:
-        所有四叉树中节点坐标、所有节点效用值、所有节点的导航标记（有用为1）、占用情况（占用为1，机器人为-1）、邻接矩阵（有邻居为0）、当前索引、邻居索引n*1
+        所有四叉树中节点坐标、所有节点效用值、所有节点的到终点的距离、所有节点的停留时间、邻接矩阵（有邻居为0）、当前索引、邻居索引n*1
         """
         # 收集所有节点的坐标
         all_node_coords = []
@@ -181,6 +175,7 @@ class Agent:
         utility = []
         # guidepost = [] # 即是否visited
         distance = [] # 与期望点的距离
+        stay_count = [] # 停留时间
 
         n_nodes = all_node_coords.shape[0]      # 节点数量
         adjacent_matrix = np.ones((n_nodes, n_nodes)).astype(int)   # 初始化邻接矩阵为全1
@@ -192,6 +187,7 @@ class Agent:
             utility.append(node.utility)                    # 收集节点效用值
             # guidepost.append(node.visited)
             distance.append(np.linalg.norm(node.coords - self.goal_point))
+            stay_count.append(get_stay_count(node.coords, self.trajectory_x, self.trajectory_y))
             for neighbor in node.neighbor_edges_set:              # 遍历节点的邻居
                 # 在所有节点中查找邻居索引
                 index = np.argwhere(node_coords_to_check == neighbor[0] + neighbor[1] * 1j)     # 返回二维数组  # [[1] [3]]
@@ -206,11 +202,12 @@ class Agent:
         utility = np.array(utility)     # 转换效用值为numpy数组
         # guidepost = np.array(guidepost) # 转换guidepost为numpy数组
         distance = np.array(distance)
+        stay_count = np.array(stay_count)
         # 获取对应的节点索引
         current_index = np.argwhere(node_coords_to_check == self.location[0] + self.location[1] * 1j)[0][0]
         # 找出当前节点的所有邻居索引
         neighbor_indices = np.argwhere(adjacent_matrix[current_index] == 0).reshape(-1)
-        return all_node_coords, utility, distance, adjacent_matrix, current_index, neighbor_indices
+        return all_node_coords, utility, distance, stay_count, adjacent_matrix, current_index, neighbor_indices
 
     def get_observation(self):
         """
@@ -228,7 +225,8 @@ class Agent:
         """
         node_coords = self.node_coords                  # 四叉树所有节点坐标
         node_utility = self.utility.reshape(-1, 1)      # 所有节点效用值
-        node_goal_distance = self.goal_distance.reshape(-1, 1)  # 所有节点的导航标记（有用为1）
+        node_goal_distance = self.goal_distance.reshape(-1, 1)  # 所有节点的到终点的距离
+        node_stay_count = self.stay_count.reshape(-1, 1)# 所有节点的停滞标记(最大为6即停滞了6次)
         current_index = self.current_index              # 当前节点索引
         edge_mask = self.adjacent_matrix                # 邻接矩阵（有邻居为0）
         current_edge = self.neighbor_indices            # 当前节点的邻居（包含自己）（有邻居为0） n*1
@@ -242,7 +240,7 @@ class Agent:
         # 归一化效用值 20*3.14 // 1.6 =39
         node_utility = node_utility / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
         # 合并节点特征
-        node_inputs = np.concatenate((node_coords, node_utility, node_goal_distance), axis=1)
+        node_inputs = np.concatenate((node_coords, node_utility, node_goal_distance, node_stay_count), axis=1)
         node_inputs = torch.FloatTensor(node_inputs).unsqueeze(0).to(self.device)
         # 填充节点特征到固定大小  360
         assert node_coords.shape[0] < NODE_PADDING_SIZE, print(node_coords.shape[0], NODE_PADDING_SIZE)
@@ -440,7 +438,7 @@ class Agent:
         plt.axis('off')
         plt.scatter(nodes[:, 0], nodes[:, 1], c=self.utility, zorder=2)
         plt.plot(robot[0], robot[1], 'mo', markersize=4, zorder=5)
-        plt.plot(goal_cell[0], goal_cell[1], 'ro', markersize=8, zorder=5)
+        plt.plot(goal_cell[0], goal_cell[1], 'ro', markersize=4, zorder=5)
         node = self.node_manager.nodes_dict.find(self.location.tolist()).data
         for neighbor_coords in node.neighbor_edges_set:
             end = (np.array(neighbor_coords) - self.location) + self.location

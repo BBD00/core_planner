@@ -213,6 +213,31 @@ def get_frontier_in_map(map_info):
         frontier_coords = set(map(tuple, frontier_coords))
     return frontier_coords
 
+def get_stay_count(current_position, past_trajectory_x, past_trajectory_y, window_size=6, threshold=0.1):
+    """
+    计算机器人是否在某个地方停留
+
+    参数:
+    current_position: 当前位置，格式为 np.array(x,y)
+    past_trajectory_x: 历史轨迹的x坐标列表[x1,x2,x3]
+    past_trajectory_y: 历史轨迹的y坐标列表[y1,y2,y3]
+    window_size: 要比较的历史位置数量，默认为6
+    threshold: 判断为"停留"的距离阈值，默认为0.1米
+
+    返回:
+    stay_count: 如果当前点与过去多个点很近，则返回1，否则返回0
+    """
+    # 确保有足够的历史轨迹点
+    if len(past_trajectory_x) < window_size:
+        return 0
+    # 获取最近的window_size个历史位置
+    recent_x = past_trajectory_x[-window_size:]
+    recent_y = past_trajectory_y[-window_size:]
+    # 计算当前位置与历史位置的距离
+    distances = np.hypot(np.array(recent_x) - current_position[0], np.array(recent_y) - current_position[1])
+    close_count = np.sum(distances < threshold)
+    return close_count
+
 def frontier_down_sample(data, voxel_size=FRONTIER_CELL_SIZE):
     """
         对边界点进行下采样，减少数据量

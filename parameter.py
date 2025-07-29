@@ -6,7 +6,7 @@ gifs_path = f'gifs/{FOLDER_NAME}'
 
 # save training data
 SUMMARY_WINDOW = 32  # how many training steps before writing data to tensorboard
-LOAD_MODEL = True  # do you want to load the model trained before
+LOAD_MODEL = False  # do you want to load the model trained before
 SAVE_IMG_GAP = 100  # how many episodes before saving a gif
 
 # map and planning resolution
@@ -50,7 +50,7 @@ GAMMA = 1
 NUM_META_AGENT = 32  # how many threads does your CPU have 16
 
 # network parameters
-NODE_INPUT_DIM = 4
+NODE_INPUT_DIM = 5
 EMBEDDING_DIM = 128
 
 # Graph parameters
