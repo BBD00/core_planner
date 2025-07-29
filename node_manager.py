@@ -100,7 +100,6 @@ class NodeManager:
         points_to_remove = []
         for point in points_in_range:
             px, py = point.data.coords[0], point.data.coords[1]
-
             # 应用相同容差处理
             # rounded_px = round(round(px / TOLERANCE) * TOLERANCE)
             # rounded_py = round(round(py / TOLERANCE) * TOLERANCE)
@@ -114,7 +113,12 @@ class NodeManager:
         # logger.debug(f"remove lenth/all_len:{len(points_to_remove)}/{len(points_in_range)}")
         for point in points_to_remove:
             node = self.nodes_dict.find(point)
-            self.remove_node_from_dict(node)
+            if node:
+                self.remove_node_from_dict(node)
+            elif node is None:
+                print(f"point {point}")
+                logger.error(f"point {point}")
+                continue
 
 
     def update_graph(self, robot_location, frontiers, updating_map_info, map_info):
@@ -162,8 +166,8 @@ class NodeManager:
         if frontiers:
             cluster_points = cluster_frontiers(frontiers)
             for points in cluster_points:
-                points = np.array(points)
-                if np.linalg.norm(robot_location - points) < UPDATING_MAP_SIZE-1:
+                points = np.round(np.array(points),1)
+                if np.linalg.norm(robot_location - points) < UPDATING_MAP_SIZE//2 - 5:
                     all_node_list.append(self.add_node_to_dict(points, frontiers, [], updating_map_info))
 
         # 更新节点的邻居关系

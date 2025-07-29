@@ -3,7 +3,6 @@ import time
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from matplotlib import patches
 import copy
 
 from utils import *
@@ -11,6 +10,7 @@ from parameter import *
 from node_manager import NodeManager
 import pickle
 import datetime
+from log_config import logger
 
 
 class Agent:
@@ -20,7 +20,6 @@ class Agent:
         self.plot = plot
         # 终点
         self.goal_point = None
-
 
         # location （世界坐标系）
         self.location = None
@@ -199,7 +198,8 @@ class Agent:
                 # assert index is not None
                 # index = index[0][0]
                 # adjacent_matrix[i, index] = 0
-                if index or index == [[0]]:  # 如果找到邻居 单独处理[[0]]因为这个会被视为False
+                # if index or index == [[0]]:  # 如果找到邻居 单独处理[[0]]因为这个会被视为False
+                if index.size > 0:  # TODO 这里貌似会有相同的点出现，应该是fronter的时候产生了相同的点
                     index = index[0][0]  # 获取索引值
                     adjacent_matrix[i, index] = 0  # 在邻接矩阵中标记连接关系（0表示连接）
 
@@ -334,6 +334,7 @@ class Agent:
             valid_indices = torch.where(logp > -1e7)[1]
             if len(valid_indices) == 0:
                 print(f"very error {logp}")
+                logger.error(f"very error!!!{logp}")
                 edge_num = torch.sum(current_edge > 0)
                 valid_indices = torch.tensor(torch.arange(edge_num), device=logp.device)
                 logp = torch.ones(1,edge_num)

@@ -241,7 +241,7 @@ def frontier_down_sample(data, voxel_size=FRONTIER_CELL_SIZE):
     downsampled_data = set(map(tuple, voxel_dict.values()))
     return downsampled_data
 
-def cluster_frontiers(frontier_set, distance_threshold=2.0, min_points=5):
+def cluster_frontiers(frontier_set, distance_threshold=2.0, min_points=MIN_CLUSTER_NUM):
     """
     聚合离散的frontier点，忽略小簇
 
@@ -312,7 +312,7 @@ def is_frontier(location, map_info):
         return False
     else:
         # 有错
-        assert cell[1] - 1 > 0 and cell[1] - 1 > 0 and cell[1] + 2 < map_info.map.shape[1] and cell[0] + 2 < \
+        assert cell[1] - 1 > 0 and cell[0] - 1 > 0 and cell[0] + 2 < map_info.map.shape[1] and cell[1] + 2 < \
                map_info.map.shape[0]
         unknwon = map_info.map[cell[1] - 1:cell[1] + 2, cell[0] - 1: cell[0] + 2] == UNKNOWN
         n = np.sum(unknwon)

@@ -9,6 +9,7 @@ from sensor import sensor_work
 from utils import *
 import pickle
 import datetime
+from log_config import logger
 
 
 class Env:
@@ -116,8 +117,8 @@ class Env:
                 # 沿着原方向移动直到碰到障碍物前一个点
                 
                 # 沿原方向逐步尝试，找到最远的可通行点
-                for step in range(int(move_distance), 0, -1):
-                    test_location = self.robot_location + unit_direction * step
+                for step in np.arange(int(move_distance), 0, -0.5):
+                    test_location = self.robot_location + unit_direction * step.item()
                     test_location = np.round(test_location)
                     test_cell = np.array([round((test_location[0] - self.belief_origin_x) / self.cell_size),
                                         round((test_location[1] - self.belief_origin_y) / self.cell_size)])
@@ -127,6 +128,8 @@ class Env:
                         self.ground_truth[test_cell[1], test_cell[0]] == FREE):
                         self.robot_location = test_location
                         break
+                    if step == 0:
+                        logger.error("error!!!")
             
             # 更新机器人位置
             # self.robot_location += unit_direction * move_distance
@@ -178,7 +181,7 @@ class Env:
             
             # 对长时间停滞施加指数惩罚
             if self.stagnation_time > 5:  # 连续5步停滞
-                reward -= max(0.5 * (self.stagnation_time - 5), 10)  # 2^0, 2^1, 2^2...
+                reward -= max(0.5 * (self.stagnation_time - 5), 5)  # 2^0, 2^1, 2^2...
                 # print(f"{self.episode_index}触发停滞,now{current_x, current_y},pre{prev_x, prev_y}")
         # reward -= min(1 / (np.linalg.norm(self.robot_location - np.array(self.trajectory_x[-1], self.trajectory_y[-1])) + 1e-10) * 5, 5)
 

@@ -11,7 +11,13 @@ from model import PolicyNet, QNet
 from runner import RLRunner
 from parameter import *
 import sys 
-from loguru import logger
+os.environ["LOG_FILE_PATH"] = f"{train_path}/vitr.log"
+from log_config import logger
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "3" 
+
+# 直接使用logger
+logger.info("Welcome to RL autonomous exploration!")
 
 ray.init()
 print("Welcome to RL autonomous exploration!")
