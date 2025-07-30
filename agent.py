@@ -397,6 +397,7 @@ class Agent:
             
             # 打印提示信息
             print(f"Assertion failed! Full debug info saved to {filename}")
+            logger.warning(f"Assertion failed! Full debug info saved to {filename}")
         
         # 原始断言
         assert condition, print(next_position, self.location, node.data.neighbor_edges_set, logp)

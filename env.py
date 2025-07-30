@@ -109,20 +109,20 @@ class Env:
             new_cell = get_cell_position_from_coords(new_location, updating_map_info)
         
             # 检查新位置是否在地图范围内且是可通行的
-            if  updating_map_info.map[new_cell[1], new_cell[0]] == FREE and self.ground_truth[new_cell_global[1], new_cell_global[0]] == FREE:
+            if updating_map_info.map[new_cell[1], new_cell[0]] == FREE and self.ground_truth[new_cell_global[1], new_cell_global[0]] == FREE:
                 # 位置有效，更新机器人位置
                 self.robot_location = new_location
             else:
                 # 如果目标位置不可通行，可以选择:
                 # 沿着原方向移动直到碰到障碍物前一个点
-                
+
                 # 沿原方向逐步尝试，找到最远的可通行点
                 for step in np.arange(int(move_distance), 0, -0.5):
                     test_location = self.robot_location + unit_direction * step.item()
                     test_location = np.round(test_location)
                     test_cell = np.array([round((test_location[0] - self.belief_origin_x) / self.cell_size),
                                         round((test_location[1] - self.belief_origin_y) / self.cell_size)])
-                    new_cell = get_cell_position_from_coords(new_location, updating_map_info)
+                    new_cell = get_cell_position_from_coords(test_location, updating_map_info)
                     
                     if (updating_map_info.map[new_cell[1], new_cell[0]] == FREE and
                         self.ground_truth[test_cell[1], test_cell[0]] == FREE):
@@ -144,9 +144,9 @@ class Env:
         except AssertionError:
             self.debug_save_info(self.ground_truth_info, self.belief_info, updating_map_info, new_cell)  # 只有断言失败时才会执行
             raise  # 可选：重新抛出异常，让上层代码知道发生了错误
-        if self.plot:
-            self.trajectory_x.append(self.robot_location[0])
-            self.trajectory_y.append(self.robot_location[1])
+        # if self.plot:
+        self.trajectory_x.append(self.robot_location[0])
+        self.trajectory_y.append(self.robot_location[1])
 
     def update_robot_belief(self):
         self.robot_belief = sensor_work(self.robot_cell, round(self.sensor_range / self.cell_size), self.robot_belief,

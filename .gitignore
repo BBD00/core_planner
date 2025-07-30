@@ -9,3 +9,4 @@ log/
 *.png
 *.pkl
 *.gif
+*.pyc
