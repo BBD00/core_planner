@@ -13,6 +13,7 @@ from parameter import *
 import sys 
 os.environ["LOG_FILE_PATH"] = f"{train_path}/vitr.log"
 from log_config import logger
+sys.setrecursionlimit(10000)
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "3" 
 
