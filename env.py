@@ -61,7 +61,13 @@ class Env:
         map_list = os.listdir(map_dir)
         map_index = episode_index % np.size(map_list)
         # 读取地图文件、灰度图
-        ground_truth = (io.imread(map_dir + '/' + map_list[map_index], 1) * 255).astype(int)
+        # ground_truth = (io.imread(map_dir + '/' + map_list[map_index], 1) * 255).astype(int)
+        ground_truth = io.imread(map_dir + '/' + map_list[map_index], as_gray=True)
+        # 判断数据类型：如果是浮点型（0-1范围），则乘以255；否则直接转换为int
+        if ground_truth.dtype in (np.float32, np.float64):
+            ground_truth = (ground_truth * 255).astype(int)
+        else:
+            ground_truth = ground_truth.astype(int)
         # 使用block_reduce进行2x2的降采样(取最小值) 最小池化
         ground_truth = block_reduce(ground_truth, 2, np.min)
         # 找到标记为208的像素点作为机器人初始位置
@@ -71,7 +77,8 @@ class Env:
         # 将地图转换为二值地图: 值>150或者50<=值<=80的像素设为可通行(254+1)
         ground_truth = (ground_truth > 150) | ((ground_truth <= 80) & (ground_truth >= 50))
         ground_truth = ground_truth * 254 + 1
-
+        unique_values = np.unique(ground_truth)
+        assert set(unique_values) == {1, 255}, f"图像包含非1和255的值，实际值为：{unique_values}"
         return ground_truth, robot_cell
     
     def debug_save_info(self, map_info, temp_info, updating_map_info, new_cell):
