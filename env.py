@@ -161,7 +161,6 @@ class Env:
         else:
             observed_frontiers = self.global_frontiers - global_frontiers
             delta_num = len(observed_frontiers)
-
         reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
 
         reward += min(1 / (np.linalg.norm(self.robot_location - goal_point) + 1e-10) * 10, 10)
@@ -181,8 +180,15 @@ class Env:
             
             # 对长时间停滞施加指数惩罚
             if self.stagnation_time > 5:  # 连续5步停滞
-                reward -= max(0.5 * (self.stagnation_time - 5), 5)  # 2^0, 2^1, 2^2...
+                reward -= min(0.5 * (self.stagnation_time - 5), 5) 
                 # print(f"{self.episode_index}触发停滞,now{current_x, current_y},pre{prev_x, prev_y}")
+                logger.info(
+                            f"{self.episode_index}触发停滞,now{current_x, current_y},pre{prev_x, prev_y}, "
+                            f"reward:+{delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)},"
+                            f"{min(1 / (np.linalg.norm(self.robot_location - goal_point) + 1e-10) * 10, 10)},"
+                            f"{movement / UPDATING_MAP_SIZE * 5},"
+                            f"{min(0.5 * (self.stagnation_time - 5), 5)}"
+                        )
         # reward -= min(1 / (np.linalg.norm(self.robot_location - np.array(self.trajectory_x[-1], self.trajectory_y[-1])) + 1e-10) * 5, 5)
 
         self.global_frontiers = global_frontiers

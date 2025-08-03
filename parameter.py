@@ -6,7 +6,7 @@ gifs_path = f'gifs/{FOLDER_NAME}'
 
 # save training data
 SUMMARY_WINDOW = 32  # how many training steps before writing data to tensorboard
-LOAD_MODEL = False  # do you want to load the model trained before
+LOAD_MODEL = True  # do you want to load the model trained before
 SAVE_IMG_GAP = 100  # how many episodes before saving a gif
 
 # map and planning resolution
@@ -35,17 +35,17 @@ UPDATING_MAP_SIZE = 4 * SENSOR_RANGE + 4 * NODE_RESOLUTION  # nodes outside this
 TOLERANCE = 0.1
 
 # 车辆停滞惩罚阈值
-STAGNATION_THRESHOLD = 0.1
+STAGNATION_THRESHOLD = 0.5
 
 # 边界聚类最小值
 MIN_CLUSTER_NUM = 7
 
 # training parameters
-MAX_EPISODE_STEP = 200  #128
-REPLAY_SIZE = 10000
+MAX_EPISODE_STEP = 128  #128
+REPLAY_SIZE = 20000
 MINIMUM_BUFFER_SIZE = 2000
-BATCH_SIZE = 128
-LR = 1e-5
+BATCH_SIZE = 256
+LR = 2e-5
 GAMMA = 1
 NUM_META_AGENT = 32  # how many threads does your CPU have 16
 

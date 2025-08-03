@@ -11,11 +11,11 @@ from model import PolicyNet, QNet
 from runner import RLRunner
 from parameter import *
 import sys 
-os.environ["LOG_FILE_PATH"] = f"{train_path}/vitr.log"
+os.environ["LOG_FILE_PATH"] = f"app.log"
 from log_config import logger
 sys.setrecursionlimit(10000)
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3" 
+os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5,6" 
 
 # 直接使用logger
 logger.info("Welcome to RL autonomous exploration!")

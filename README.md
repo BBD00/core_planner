@@ -26,7 +26,7 @@ cd ARiADNE
 ```
 Launch your conda environment if any and run:
 
-```python driver.py```
+```RAY_DEDUP_LOGS=0 python driver.py```
 
 The default training code requires around 8GB VRAM and 20G RAM. 
 You can modify the hyperparameters in `parameter.py`.
