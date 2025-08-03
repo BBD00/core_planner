@@ -2,11 +2,11 @@ logs/
 model/
 train/
 log/
+gifs/
 *.pt
 *.csv
 *.pth
 *.log
-*.png
 *.pkl
 *.gif
 *.pyc
