@@ -33,6 +33,7 @@ class Env:
         self.sensor_range = SENSOR_RANGE  # meter
         self.travel_dist = 0  # meter
         self.explored_rate = 0
+        self.previous_distance = 0
         # 栅格数据
         self.robot_belief = sensor_work(self.robot_cell, self.sensor_range / self.cell_size, self.robot_belief,
                                         self.ground_truth)
@@ -170,7 +171,12 @@ class Env:
             delta_num = len(observed_frontiers)
         reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
 
-        reward += min(1 / (np.linalg.norm(self.robot_location - goal_point) + 1e-10) * 10, 10)
+        # reward += min(1 / (np.linalg.norm(self.robot_location - goal_point) + 1e-10) * 2, 2)
+        current_distance = np.linalg.norm(self.robot_location - goal_point)
+        # 奖励是距离的减少量
+        reward += max(self.previous_distance - current_distance, 0) * 0.5  # 乘以一个系数使奖励更明显 理论最大是5*0.5
+        # 更新距离记录
+        self.previous_distance = current_distance
         # 增加停滞惩罚
         if len(self.trajectory_x) >= 2:
             prev_x, prev_y = self.trajectory_x[-2], self.trajectory_y[-2]
