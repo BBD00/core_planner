@@ -213,7 +213,7 @@ def get_frontier_in_map(map_info):
         frontier_coords = set(map(tuple, frontier_coords))
     return frontier_coords
 
-def get_stay_count(current_position, past_trajectory_x, past_trajectory_y, window_size=6, threshold=0.1):
+def get_stay_count(current_position, past_trajectory_x, past_trajectory_y, window_size=20, threshold=0.1):
     """
     计算机器人是否在某个地方停留
 

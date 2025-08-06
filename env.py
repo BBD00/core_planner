@@ -4,6 +4,7 @@ import numpy as np
 from skimage import io
 from skimage.measure import block_reduce
 from copy import deepcopy
+import parameter
 
 from sensor import sensor_work
 from utils import *
@@ -17,6 +18,7 @@ class Env:
         self.episode_index = episode_index
         self.plot = plot
         self.stagnation_time = 0    # 停滞时间
+        self.map_name = None
         # 导入地面真值地图(1 or 255)和初始机器人单元格位置 255白色为可通行 initial_cell为大于0数
         self.ground_truth, self.robot_cell = self.import_ground_truth(episode_index)
         self.ground_truth_size = np.shape(self.ground_truth)  # cell
@@ -58,11 +60,12 @@ class Env:
             ground_truth: 地面真值地图
             robot_cell: 机器人初始单元格位置
         """
-        map_dir = f'maps'
+        map_dir = map_path
         map_list = os.listdir(map_dir)
         map_index = episode_index % np.size(map_list)
         # 读取地图文件、灰度图
         # ground_truth = (io.imread(map_dir + '/' + map_list[map_index], 1) * 255).astype(int)
+        self.map_name = map_list[map_index]
         ground_truth = io.imread(map_dir + '/' + map_list[map_index], as_gray=True)
         # 判断数据类型：如果是浮点型（0-1范围），则乘以255；否则直接转换为int
         if ground_truth.dtype in (np.float32, np.float64):
@@ -78,8 +81,6 @@ class Env:
         # 将地图转换为二值地图: 值>150或者50<=值<=80的像素设为可通行(254+1)
         ground_truth = (ground_truth > 150) | ((ground_truth <= 80) & (ground_truth >= 50))
         ground_truth = ground_truth * 254 + 1
-        unique_values = np.unique(ground_truth)
-        assert set(unique_values) == {1, 255}, f"图像包含非1和255的值，实际值为：{unique_values}"
         return ground_truth, robot_cell
     
     def debug_save_info(self, map_info, temp_info, updating_map_info, new_cell):
@@ -243,7 +244,7 @@ class Env:
                  (self.robot_location[1] - self.belief_origin_y) / self.cell_size, 'mo', markersize=4, zorder=5)
         plt.plot((np.array(self.trajectory_x) - self.belief_origin_x) / self.cell_size,
                  (np.array(self.trajectory_y) - self.belief_origin_y) / self.cell_size, 'b', linewidth=2, zorder=1)
-        plt.suptitle('Explored ratio: {:.4g}  Travel distance: {:.4g}'.format(self.explored_rate, self.travel_dist))
+        plt.suptitle('Explored ratio: {:.4g}  Travel distance: {:.4g}   Map Name:{}'.format(self.explored_rate, self.travel_dist, self.map_name))
         plt.tight_layout()
         # plt.show()
         plt.savefig('{}/{}_{}_samples.png'.format(gifs_path, self.episode_index, step), dpi=150)

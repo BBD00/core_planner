@@ -3,10 +3,11 @@ FOLDER_NAME = 'vitp'
 model_path = f'model/{FOLDER_NAME}'
 train_path = f'train/{FOLDER_NAME}'
 gifs_path = f'gifs/{FOLDER_NAME}'
+map_path = f'maps'
 
 # save training data
 SUMMARY_WINDOW = 32  # how many training steps before writing data to tensorboard
-LOAD_MODEL = False  # do you want to load the model trained before
+LOAD_MODEL = True  # do you want to load the model trained before
 SAVE_IMG_GAP = 100  # how many episodes before saving a gif
 
 # map and planning resolution
