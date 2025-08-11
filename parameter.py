@@ -3,7 +3,7 @@ FOLDER_NAME = 'vitp'
 model_path = f'model/{FOLDER_NAME}'
 train_path = f'train/{FOLDER_NAME}'
 gifs_path = f'gifs/{FOLDER_NAME}'
-map_path = f'maps'
+map_path = f'/data/kjt_data/code/DARE/maps_train'
 
 # save training data
 SUMMARY_WINDOW = 32  # how many training steps before writing data to tensorboard
@@ -36,7 +36,9 @@ UPDATING_MAP_SIZE = 4 * SENSOR_RANGE + 4 * NODE_RESOLUTION  # nodes outside this
 TOLERANCE = 0.1
 
 # 车辆停滞惩罚阈值
-STAGNATION_THRESHOLD = 0.5
+STAGNATION_THRESHOLD = 3
+STAY_DIS_THRESHOLD = 3
+STAY_WINDOW_SIZE = 20
 
 # 边界聚类最小值
 MIN_CLUSTER_NUM = 7

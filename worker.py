@@ -70,7 +70,7 @@ class Worker:
                 if np.linalg.norm(self.robot.location - self.robot.goal_point) <= END_MIN_DISTANCE: # np.array_equal(self.robot.location, self.robot.goal_point) self.robot.utility.sum() == 0
                     done = True
                     reward += 20
-                    logger.info(f"done_reward:{reward}")
+                    logger.info(f"{self.global_step} done_reward:{reward}")
                 self.save_reward_done(reward, done)
 
                 observation = self.robot.get_observation()

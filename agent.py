@@ -420,10 +420,11 @@ class Agent:
         plt.axis('off')
         plt.scatter(nodes[:, 0], nodes[:, 1], c=self.utility, zorder=2)
         count = 0
-        for node, utility in zip(nodes, self.utility):
+        for node, utility, stay_count in zip(nodes, self.utility, self.stay_count):
             # plt.text(node[0], node[1], str(utility), zorder=3)
             # plt.text(node[0],node[1],f"({node[0]},{node[1]}){utility}",  fontsize=5, zorder=3)
-            plt.text(node[0],node[1], f"({self.node_coords[count][0]},{self.node_coords[count][1]}){utility}", fontsize=5, zorder=3)
+            # plt.text(node[0],node[1], f"({self.node_coords[count][0]},{self.node_coords[count][1]}){utility}", fontsize=5, zorder=3)
+            plt.text(node[0],node[1], f"({stay_count}){utility}", fontsize=5, zorder=3)
             count += 1
         plt.plot(robot[0], robot[1], 'mo', markersize=16, zorder=5)
         plt.plot(goal_cell[0], goal_cell[1], 'ro', markersize=10, zorder=5)

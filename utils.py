@@ -213,7 +213,7 @@ def get_frontier_in_map(map_info):
         frontier_coords = set(map(tuple, frontier_coords))
     return frontier_coords
 
-def get_stay_count(current_position, past_trajectory_x, past_trajectory_y, window_size=20, threshold=0.1):
+def get_stay_count(current_position, past_trajectory_x, past_trajectory_y, window_size=STAY_WINDOW_SIZE, threshold=STAY_DIS_THRESHOLD):
     """
     计算机器人是否在某个地方停留
 
@@ -231,8 +231,10 @@ def get_stay_count(current_position, past_trajectory_x, past_trajectory_y, windo
     if len(past_trajectory_x) < window_size:
         return 0
     # 获取最近的window_size个历史位置
-    recent_x = past_trajectory_x[-window_size:]
-    recent_y = past_trajectory_y[-window_size:]
+    # recent_x = past_trajectory_x[-window_size:]
+    # recent_y = past_trajectory_y[-window_size:]
+    recent_x = past_trajectory_x
+    recent_y = past_trajectory_y
     # 计算当前位置与历史位置的距离
     distances = np.hypot(np.array(recent_x) - current_position[0], np.array(recent_y) - current_position[1])
     close_count = np.sum(distances < threshold)

@@ -6,7 +6,7 @@ def setup_logger(worker_id=None):
     logger.remove()  # 移除默认处理程序
     
     log_file = os.environ.get("LOG_FILE_PATH", "app.log")
-    logger.add(log_file, level="INFO")
+    logger.add(log_file, level="INFO", rotation="10 MB")
     
     return logger
 
