@@ -6,6 +6,7 @@ from agent import Agent
 from utils import *
 from model import PolicyNet
 from log_config import logger
+import numpy as np  # 确保导入numpy
 
 if not os.path.exists(gifs_path):
     os.makedirs(gifs_path)
@@ -31,7 +32,20 @@ class Worker:
         self.env = Env(global_step, plot=self.save_image)
         # 创建智能体
         self.robot = Agent(policy_net, self.device, self.save_image)
-        self.robot.set_goal_point(self.env.ground_truth_info, self.env.robot_cell)
+        # 根据global_step采样distance
+        if self.global_step < 10000:
+            # 80-100概率大，120-200概率小
+            if np.random.random() < 0.7:  # 70%概率选择80-100
+                distance = np.random.randint(100, 121)
+            else:  # 30%概率选择120-200
+                distance = np.random.randint(120, 201)
+        else:
+            # 80-100概率小，120-200概率大
+            if np.random.random() < 0.3:  # 30%概率选择80-100
+                distance = np.random.randint(100, 121)
+            else:  # 70%概率选择120-200
+                distance = np.random.randint(120, 201)
+        self.robot.set_goal_point(self.env.ground_truth_info, self.env.robot_cell, distance)
         self.episode_buffer = []
         self.perf_metrics = dict()
         for i in range(15):
@@ -83,9 +97,9 @@ class Worker:
 
                 if done:
                     break
-            except:
+            except Exception as e:
                 print(f'{self.global_step} failed \n')
-                logger.error(f'{self.global_step} failed \n')
+                logger.error(f'{self.global_step} failed: {e}\n')
                 break
 
         # save metrics
@@ -107,7 +121,6 @@ class Worker:
         self.episode_buffer[3] += current_index
         self.episode_buffer[4] += current_edge
         self.episode_buffer[5] += edge_padding_mask.bool()
-
     def save_action(self, action_index):
         self.episode_buffer[6] += action_index.reshape(1, 1, 1)
 

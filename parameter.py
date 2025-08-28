@@ -3,7 +3,7 @@ FOLDER_NAME = 'vitp'
 model_path = f'model/{FOLDER_NAME}'
 train_path = f'train/{FOLDER_NAME}'
 gifs_path = f'gifs/{FOLDER_NAME}'
-map_path = f'/data/kjt_data/code/DARE/maps_train'
+map_path = f'/data/kjt_data_1/code_core/DARE/maps_train'
 
 # save training data
 SUMMARY_WINDOW = 32  # how many training steps before writing data to tensorboard
@@ -21,7 +21,7 @@ OCCUPIED = 1  # value of obstacle cells in the map
 UNKNOWN = 127  # value of unknown cells in the map
 
 # sensor and utility range
-SENSOR_RANGE = 16  # meter
+SENSOR_RANGE = 20  # meter
 UTILITY_RANGE = 0.8 * SENSOR_RANGE  # consider frontiers within this range as observable
 MIN_UTILITY = 2  # ignore the utility if observable frontiers are less than this value
 
@@ -44,13 +44,13 @@ STAY_WINDOW_SIZE = 20
 MIN_CLUSTER_NUM = 7
 
 # training parameters
-MAX_EPISODE_STEP = 128  #128
+MAX_EPISODE_STEP = 250  #128
 REPLAY_SIZE = 20000
 MINIMUM_BUFFER_SIZE = 2000
 BATCH_SIZE = 256
 LR = 2e-5
 GAMMA = 1
-NUM_META_AGENT = 32  # how many threads does your CPU have 16
+NUM_META_AGENT = 48  # how many threads does your CPU have 16
 
 # network parameters
 NODE_INPUT_DIM = 5
