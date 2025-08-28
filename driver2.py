@@ -173,14 +173,7 @@ def main():
                     sample_indices = random.sample(indices, BATCH_SIZE)
                     rollouts = []
                     for i in range(len(experience_buffer)):
-                        try:
-                            rollouts.append([experience_buffer[i][index] for index in sample_indices])
-                        except:
-                            print(f"experience_buffer 长度: {len(experience_buffer)}")
-                            print(f"当前 i 值: {i}")
-                            print(f"experience_buffer[i] 长度: {len(experience_buffer[i])}")
-                            print(f"sample_indices 中的最大索引: {max(sample_indices) if sample_indices else '空'}")
-                            raise
+                        rollouts.append([experience_buffer[i][index] for index in sample_indices])
 
                     # stack batch data to tensors
                     node_inputs = torch.stack(rollouts[0]).to(device)
