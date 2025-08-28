@@ -10,3 +10,4 @@ gifs/
 *.pkl
 *.gif
 *.pyc
+__pycache__/
