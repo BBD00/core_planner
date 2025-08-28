@@ -87,29 +87,23 @@ class NodeManager:
         :param new_points: 当前观测的可视点
         :return:
         """
-        bb = quads.BoundingBox(min_x=center_point[0] - UPDATING_MAP_SIZE / 2 - 1, min_y=center_point[1] - UPDATING_MAP_SIZE / 2 - 1,
-                               max_x=center_point[0] + UPDATING_MAP_SIZE / 2 + 1, max_y=center_point[1] + UPDATING_MAP_SIZE / 2 + 1)
+        bb = quads.BoundingBox(min_x=center_point[0] - UPDATING_MAP_SIZE / 2 - 3, min_y=center_point[1] - UPDATING_MAP_SIZE / 2 - 3,
+                               max_x=center_point[0] + UPDATING_MAP_SIZE / 2 + 3, max_y=center_point[1] + UPDATING_MAP_SIZE / 2 + 3)
         points_in_range = self.nodes_dict.within_bb(bb)
         new_points_set = set()
         for point in new_points:
-            # 将坐标按容差取整，避免浮点精度问题
-            # rounded_x = round(round(point[0] / TOLERANCE) * TOLERANCE)
-            # rounded_y = round(round(point[1] / TOLERANCE) * TOLERANCE)
             new_points_set.add((point[0], point[1]))
         # 筛选并删除不存在的点
         points_to_remove = []
         for point in points_in_range:
             px, py = point.data.coords[0], point.data.coords[1]
-            # 应用相同容差处理
-            # rounded_px = round(round(px / TOLERANCE) * TOLERANCE)
-            # rounded_py = round(round(py / TOLERANCE) * TOLERANCE)
             # 检查点是否在新数据中
-            # if (px, py) not in new_points_set and \
-            #         not np.array_equal(np.array([px, py]), self.goal_point):
-            #     points_to_remove.append(point)
-            # 新策略在范围内的除了特殊点全部移除重新生成
-            if not np.array_equal(np.array([px, py]), self.goal_point):
-                points_to_remove.append(point)
+            if (((px, py) not in new_points_set and \
+                    not np.array_equal(np.array([px, py]), self.goal_point)) and \
+                    point.data.noise_flag) or len(point.data.neighbor_edges_set)==0:
+                    # np.linalg.norm(np.array([px, py] - center_point)) < parameter.UPDATING_MAP_SIZE / 2:
+                    # if point.data.step >  self.step - 3:
+                    points_to_remove.append(point)
         # logger.debug(f"remove lenth/all_len:{len(points_to_remove)}/{len(points_in_range)}")
         for point in points_to_remove:
             node = self.nodes_dict.find(point)
@@ -131,6 +125,7 @@ class NodeManager:
         updating_map_info: 用于更新的局部地图信息
         map_info: 完整地图信息
         """
+        self.remove_noise_nodes(robot_location, updating_map_info)
         visible_graphs = extract_visible_graph_from_map(updating_map_info)
         # visualize_contours(updating_map_info.map, visible_graphs)
         all_node_list = []  # 初始化所有节点列表
@@ -150,11 +145,10 @@ class NodeManager:
                 else:
                     # 如果存在则更新可见边
                     node = node.data
-                    # 如果节点效用为0或距离机器人较远，则不更新
-                    if np.linalg.norm(node.coords - robot_location) > 2 * SENSOR_RANGE:
-                        pass
-                    else:  # 否则更新节点的可观察边界点 旧的删除，新的添加  同时对新边界进行计算如果周围没有边界了就设置不再更新邻居
-                        node.update_node_observable_frontiers(frontiers, updating_map_info, map_info)
+                    node.noise_flag = False
+                    node.update_node_observable_frontiers(frontiers, updating_map_info, map_info)
+                    node.update_neighbor_set(egdes_coord, self.nodes_dict)
+                    
                 all_node_list.append(node)
         # 为起点单独增加
         if not self.check_node_exist_in_dict(robot_location):
@@ -177,167 +171,155 @@ class NodeManager:
                     UPDATING_MAP_SIZE / 2):
                 node.update_neighbor_nodes(updating_map_info, self.nodes_dict)
 
-
-
-    def update_graph_bck(self, robot_location, frontiers, updating_map_info, map_info):
+    def remove_noise_nodes(self, robot_location, updating_map_info):
         """
-        更新节点图，添加新节点并更新已有节点的信息（更新边界、更新邻居）
-
+        # TODO: 耗时太长
+        移除噪声节点，主要基于两个特征：
+        1. 共线：三个或更多节点在一条直线上时，移除中间所有节点，保留两端点
+        2. 距离过近：与其他节点距离过小的节点
+        
         参数:
-        robot_location: 机器人当前世界位置
-        frontiers: 边界点集合
-        updating_map_info: 用于更新的局部地图信息
-        map_info: 完整地图信息
+        robot_location: 机器人当前位置
         """
-        # 获取当前位置附近需要更新的节点坐标 世界坐标
-        node_coords, _ = get_updating_node_coords(robot_location, updating_map_info)
+        # 获取当前更新区域内的所有节点
+        bb = quads.BoundingBox(min_x=robot_location[0] - UPDATING_MAP_SIZE / 2 - 10, 
+                               min_y=robot_location[1] - UPDATING_MAP_SIZE / 2 - 10,
+                               max_x=robot_location[0] + UPDATING_MAP_SIZE / 2 + 10, 
+                               max_y=robot_location[1] + UPDATING_MAP_SIZE / 2 + 10)
+        nodes_in_range = self.nodes_dict.within_bb(bb)
+        
+        if len(nodes_in_range) < 3:
+            return
+        
+        nodes_to_remove = set()
+        
+        # 1. 移除共线的中间节点（保留两端点）
+        collinear_nodes = self._find_collinear_middle_nodes_simple(nodes_in_range, updating_map_info)
+        nodes_to_remove.update(collinear_nodes)
+        # 2. 移除距离过近的节点（保留效用更高的）
+        close_nodes = self._find_close_noise_nodes(nodes_in_range)
+        nodes_to_remove.update(close_nodes)
+        # 3. 执行移除（排除特殊节点）
+        for node in nodes_to_remove:
+            # 保护目标点和机器人位置
+            if (not np.array_equal(node.data.coords, self.goal_point) and 
+                not np.array_equal(node.data.coords, robot_location)):
+                self.remove_node_from_dict(node)
+        
+        # if nodes_to_remove:
+        #     print(f"移除了 {len(nodes_to_remove)} 个噪声节点")
+    def _find_collinear_middle_nodes_simple(self, nodes_in_range, updating_map_info, collinear_threshold=0.5):
+        """
+        简化版本：只移除明显的共线中间节点
+        """
+        nodes_to_remove = set()
+        nodes_list = list(nodes_in_range)
+        
+        # 只检查每个节点与其直接邻居的共线性
+        for node in nodes_list:
+            neighbors = []
+            for neighbor_coords in node.data.neighbor_edges_set:
+                neighbor_node = self.nodes_dict.find(neighbor_coords)
+                if neighbor_node and neighbor_node in nodes_list:
+                    neighbors.append(neighbor_node)
+            
+            # 如果邻居数量 >= 2，检查是否为中间节点
+            if len(neighbors) >= 2:
+                coords = node.data.coords
+                
+                # 检查所有邻居对是否共线通过当前节点
+                for i, neighbor_a in enumerate(neighbors):
+                    for neighbor_b in neighbors[i+1:]:
+                        coords_a = neighbor_a.data.coords
+                        coords_b = neighbor_b.data.coords
+                        
+                        # 检查当前节点是否在AB直线上
+                        dist_to_line = self._point_to_line_distance(coords, coords_a, coords_b)
+                        
+                        if dist_to_line < collinear_threshold:
+                            # 检查是否在线段中间
+                            if self._is_point_between(coords, coords_a, coords_b):
+                                nodes_to_remove.add(node)
+                                break
+        
+        return nodes_to_remove
 
-        all_node_list = []      # 初始化所有节点列表
-        for coords in node_coords:  # 遍历所有需要更新的节点坐标
-            node = self.check_node_exist_in_dict(coords)    # 检查节点是否已存在
-            if node is None:         # 如果节点不存在
-                # 创建新节点并添加到字典
-                node = self.add_node_to_dict(coords, frontiers, updating_map_info)
-            else:       # 如果节点已存在即之前传感器扫过
-                node = node.data        # 获取节点数据
-                # 如果节点效用为0或距离机器人较远，则不更新
-                if node.utility == 0 or np.linalg.norm(node.coords - robot_location) > 2 * SENSOR_RANGE:
-                    pass
-                else:   # 否则更新节点的可观察边界点 旧的删除，新的添加  同时对新边界进行计算如果周围没有边界了就设置不再更新邻居
-                    node.update_node_observable_frontiers(frontiers, updating_map_info, map_info)
-            all_node_list.append(node)  # 将节点添加到列表
-        # 更新节点的邻居关系
-        for node in all_node_list:  # 遍历所有节点
-            # 如果节点需要更新邻居且在传感器范围内（因为这是最新的数据）
-            if node.need_update_neighbor and np.linalg.norm(node.coords - robot_location) < (
-                    SENSOR_RANGE + NODE_RESOLUTION):
-                node.update_neighbor_nodes(updating_map_info, self.nodes_dict)
+    def _is_point_between(self, point, line_start, line_end, tolerance=0.1):
+        """检查点是否在线段中间"""
+        dist_start = np.linalg.norm(point - line_start)
+        dist_end = np.linalg.norm(point - line_end)
+        dist_line = np.linalg.norm(line_end - line_start)
+        
+        return abs(dist_start + dist_end - dist_line) < tolerance
 
-    def Dijkstra(self, start, boundary=None):
-        q = set()
-        dist_dict = {}
-        prev_dict = {}
+    def _find_close_noise_nodes(self, nodes_in_range, min_distance=0.5):
+        """
+        找出距离过近的噪声节点
+        
+        参数:
+        nodes_in_range: 范围内的节点列表
+        min_distance: 最小距离阈值
+        
+        返回:
+        需要移除的距离过近的噪声节点集合
+        """
+        nodes_to_remove = set()
+        nodes_list = list(nodes_in_range)
+        n = len(nodes_list)
+        
+        for i in range(n):
+            for j in range(i + 1, n):
+                node_a = nodes_list[i]
+                node_b = nodes_list[j]
+                
+                # 计算距离
+                distance = np.linalg.norm(node_a.data.coords - node_b.data.coords)
+                
+                if distance <= min_distance:
+                    # 保留效用更高的节点，移除效用较低的
+                    if node_a.data.utility > node_b.data.utility:
+                        nodes_to_remove.add(node_b)
+                    elif node_b.data.utility > node_a.data.utility:
+                        nodes_to_remove.add(node_a)
+                    else:
+                        # 效用相同时，保留邻居数量更多的
+                        if len(node_a.data.neighbor_edges_set) >= len(node_b.data.neighbor_edges_set):
+                            nodes_to_remove.add(node_b)
+                        else:
+                            nodes_to_remove.add(node_a)
+        
+        return nodes_to_remove
 
-        for node in self.nodes_dict.__iter__():
-            coords = node.data.coords
-            key = (coords[0], coords[1])
-            dist_dict[key] = 1e8
-            prev_dict[key] = None
-            q.add(key)
+    def _point_to_line_distance(self, point, line_start, line_end):
+        """
+        计算点到直线的距离
+        
+        参数:
+        point: 目标点坐标
+        line_start: 直线起点
+        line_end: 直线终点
+        
+        返回:
+        点到直线的距离
+        """
+        # 向量计算
+        line_vec = line_end - line_start
+        point_vec = point - line_start
+        
+        # 避免除零
+        line_len_sq = np.dot(line_vec, line_vec)
+        if line_len_sq < 1e-10:
+            return np.linalg.norm(point_vec)
+        
+        # 计算投影长度
+        proj_len = np.dot(point_vec, line_vec) / line_len_sq
+        
+        # 计算投影点
+        proj_point = line_start + proj_len * line_vec
+        
+        # 返回距离
+        return np.linalg.norm(point - proj_point)
 
-        assert (start[0], start[1]) in dist_dict.keys()
-        dist_dict[(start[0], start[1])] = 0
-
-        while len(q) > 0:
-            u = None
-            for coords in q:
-                if u is None:
-                    u = coords
-                elif dist_dict[coords] < dist_dict[u]:
-                    u = coords
-
-            q.remove(u)
-
-            # assert self.nodes_dict.find(u) is not None
-
-            node = self.nodes_dict.find(u).data
-            for neighbor_node_coords in node.neighbor_set:
-                v = (neighbor_node_coords[0], neighbor_node_coords[1])
-                if v in q:
-                    cost = ((neighbor_node_coords[0] - u[0]) ** 2 + (
-                            neighbor_node_coords[1] - u[1]) ** 2) ** (1 / 2)
-                    cost = np.round(cost, 2)
-                    alt = dist_dict[u] + cost
-                    if alt < dist_dict[v]:
-                        dist_dict[v] = alt
-                        prev_dict[v] = u
-
-        return dist_dict, prev_dict
-
-    def get_Dijkstra_path_and_dist(self, dist_dict, prev_dict, end):
-        if (end[0], end[1]) not in dist_dict:
-            print("destination is not in Dijkstra graph")
-            return [], 1e8
-
-        dist = dist_dict[(end[0], end[1])]
-
-        path = [(end[0], end[1])]
-        prev_node = prev_dict[(end[0], end[1])]
-        while prev_node is not None:
-            path.append(prev_node)
-            temp = prev_node
-            prev_node = prev_dict[temp]
-
-        path.reverse()
-        return path[1:], np.round(dist, 2)
-
-    def h(self, coords_1, coords_2):
-        # h = abs(coords_1[0] - coords_2[0]) + abs(coords_1[1] - coords_2[1])
-        # h = ((coords_1[0] - coords_2[0]) ** 2 + (coords_1[1] - coords_2[1]) ** 2) ** (1 / 2)
-        h = np.linalg.norm(np.array([coords_1[0] - coords_2[0], coords_1[1] - coords_2[1]]))
-        # h = np.round(h, 2)
-        return h
-
-    def a_star(self, start, destination, max_dist=None):
-        # the path does not include the start
-        if not self.check_node_exist_in_dict(start):
-            print(start)
-            Warning("start position is not in node dict")
-            return [], 1e8
-        if not self.check_node_exist_in_dict(destination):
-            Warning("end position is not in node dict")
-            return [], 1e8
-
-        if start[0] == destination[0] and start[1] == destination[1]:
-            return [], 0
-
-        open_list = {(start[0], start[1])}
-        closed_list = set()
-        g = {(start[0], start[1]): 0}
-        parents = {(start[0], start[1]): (start[0], start[1])}
-
-        open_heap = []
-        heapq.heappush(open_heap, (0, (start[0], start[1])))
-
-        while len(open_list) > 0:
-            _, n = heapq.heappop(open_heap)
-            n_coords = n
-            node = self.nodes_dict.find(n).data
-
-            if max_dist is not None:
-                if g[n] > max_dist:
-                    return [], 1e8
-
-            if n_coords[0] == destination[0] and n_coords[1] == destination[1]:
-                path = []
-                length = g[n]
-                while parents[n] != n:
-                    path.append(n)
-                    n = parents[n]
-                path.reverse()
-
-                return path, np.round(length, 2)
-
-            costs = np.linalg.norm(np.array(list(node.neighbor_set)).reshape(-1, 2) - [n_coords[0], n_coords[1]],
-                                   axis=1)
-            for cost, neighbor_node_coords in zip(costs, node.neighbor_set):
-                m = (neighbor_node_coords[0], neighbor_node_coords[1])
-                if m not in open_list and m not in closed_list:
-                    open_list.add(m)
-                    parents[m] = n
-                    g[m] = g[n] + cost
-                    heapq.heappush(open_heap, (g[m], m))
-                else:
-                    if g[m] > g[n] + cost:
-                        g[m] = g[n] + cost
-                        parents[m] = n
-
-            open_list.remove(n)
-            closed_list.add(n)
-
-        print('Path does not exist!')
-
-        return [], 1e8
 
 
 class LocalNode:
@@ -354,12 +336,12 @@ class LocalNode:
         self.utility_range = UTILITY_RANGE  # 效用范围（可观察边界点的最大距离）16
         self.utility = 0        # 初始效用值为0  定义为其效用范围内的边界点数量
         self.visited = 0
+        self.noise_flag = True
         # 初始化可观察边界点
         self.observable_frontiers = self.initialize_observable_frontiers(frontiers, updating_map_info)
         # 可见边节点 只有目标节点 里面全是元组
         self.initialize_neighbor_set(edge_coords) # self.neighbor_edges_set
 
-        self.need_update_neighbor = True         # 设置需要更新邻居标志
 
     def initialize_neighbor_set(self, edge_coords):
         edge_coords = np.array(edge_coords) if not isinstance(edge_coords, np.ndarray) else edge_coords
@@ -386,6 +368,11 @@ class LocalNode:
         返回:
         节点自身可观察边界点集合
         """
+        if self.coords[0] < updating_map_info.map_origin_x or self.coords[1] < updating_map_info.map_origin_y or \
+            self.coords[0] > updating_map_info.map_origin_x + updating_map_info.cell_size * updating_map_info.map.shape[1] or \
+            self.coords[1] > updating_map_info.map_origin_y + updating_map_info.cell_size * updating_map_info.map.shape[0]:
+            return
+        
         if len(frontiers) == 0:
             self.utility = 0
             return set()
@@ -406,6 +393,37 @@ class LocalNode:
                 self.utility = 0
                 observable_frontiers = set()
             return observable_frontiers
+        
+    def update_neighbor_set(self, edge_coords, nodes_dict=None):
+        """
+        更新节点的邻居关系 和update_neighbor_nodes的区别在于这个是传入邻居边并进行更新
+        将传入的 edge_coords 追加进当前邻居集合；
+        若提供 nodes_dict，则同时移除在全局节点字典中不存在的邻居。
+        参数:
+        edge_coords: 邻居边
+        """
+        # 校验并清理不存在的邻居
+        if nodes_dict is not None:
+            to_remove = []
+            for nei in self.neighbor_edges_set:
+                if nodes_dict.find(nei) is None:
+                    to_remove.append(nei)
+            for nei in to_remove:
+                self.neighbor_edges_set.discard(nei)
+
+        # 处理不同维度的输入
+        if edge_coords.size == 0:  # 空输入（如[]）
+            edge_coords = np.empty((0, 2))  # 创建0行2列的空数组
+        elif edge_coords.ndim == 1:  # 一维输入
+            edge_coords = edge_coords.reshape(-1, 2)  # 自动重塑为(n,2)形状
+        else:  # 二维输入（如[[x1,y1], [x2,y2]]）
+            if edge_coords.shape[1] != 2:  # 检查列数是否为2
+                raise ValueError("2D input must have exactly 2 columns")
+        new_edges = list(map(tuple, edge_coords))
+        # 追加新边
+        for e in new_edges:
+            if e != tuple(self.coords):  # 不连接自身
+                self.neighbor_edges_set.add(e)
 
     def update_neighbor_nodes(self, updating_map_info, nodes_dict):
         """
@@ -419,6 +437,10 @@ class LocalNode:
         # min_y = updating_map_info.map_origin_y
         # center_x = min_x + updating_map_info.cell_size * (updating_map_info.map.shape[1] // 2)
         # center_y = min_y + updating_map_info.cell_size * (updating_map_info.map.shape[0] // 2)
+        if self.coords[0] < updating_map_info.map_origin_x or self.coords[1] < updating_map_info.map_origin_y or \
+            self.coords[0] > updating_map_info.map_origin_x + updating_map_info.cell_size * updating_map_info.map.shape[1] or \
+            self.coords[1] > updating_map_info.map_origin_y + updating_map_info.cell_size * updating_map_info.map.shape[0]:
+            return
         node_in_range = get_nodes_in_range(updating_map_info, nodes_dict)
 
         for node in node_in_range:
@@ -427,13 +449,6 @@ class LocalNode:
                 if not check_collision(self.coords, node.coords, updating_map_info):
                     self.neighbor_edges_set.add(tuple(node.coords))
                     node.neighbor_edges_set.add(tuple(self.coords))
-
-        # TODO 有一种可能是点是围城障碍物时落在位置区域了
-        if self.utility == 0:
-            node_cell = get_cell_position_from_coords(np.array(self.coords), updating_map_info)
-            if updating_map_info.map[node_cell[1],node_cell[0]] == FREE:
-                # logger.warning(f"the {self.coords} need_update_neighbor {self.need_update_neighbor}")
-                self.need_update_neighbor = False
 
     def update_node_observable_frontiers(self, frontiers, updating_map_info, map_info):
         """

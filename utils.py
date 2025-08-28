@@ -348,7 +348,7 @@ def is_frontier(location, map_info):
         else:
             return False
 
-def check_collision(start, end, map_info):
+def check_collision(start, end, map_info, do_trans=True):
     """
     使用Bresenham直线算法检查两点之间是否有障碍物
 
@@ -361,19 +361,36 @@ def check_collision(start, end, map_info):
     布尔值，表示是否存在碰撞
     """
     # Bresenham line algorithm checking
-    assert start[0] >= map_info.map_origin_x, print(start[0],map_info.map_origin_x)
-    assert start[1] >= map_info.map_origin_y, print(start[1],map_info.map_origin_y)
-    assert end[0] >= map_info.map_origin_x, print(end[0],map_info.map_origin_x)
-    assert end[1] >= map_info.map_origin_y, print(end[1],map_info.map_origin_y)
-    assert start[0] <= map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1],print(start[0],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1])
-    assert start[1] <= map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0],print(start[1],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[0])
-    assert end[0] <= map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1],print(end[0],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1])
-    assert end[1] <= map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0],print(end[1],map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0])
+    # assert start[0] >= map_info.map_origin_x, print(start[0],map_info.map_origin_x)
+    # assert start[1] >= map_info.map_origin_y, print(start[1],map_info.map_origin_y)
+    # assert end[0] >= map_info.map_origin_x, print(end[0],map_info.map_origin_x)
+    # assert end[1] >= map_info.map_origin_y, print(end[1],map_info.map_origin_y)
+    # assert start[0] <= map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1],print(start[0],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1])
+    # assert start[1] <= map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0],print(start[1],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[0])
+    # assert end[0] <= map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1],print(end[0],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1])
+    # assert end[1] <= map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0],print(end[1],map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0])
     collision = False
 
-    start_cell = get_cell_position_from_coords(start, map_info)
-    end_cell = get_cell_position_from_coords(end, map_info)
+    start_cell = get_cell_position_from_coords(start, map_info, check_negative=False) if do_trans else start
+    end_cell = get_cell_position_from_coords(end, map_info, check_negative=False) if do_trans else end
     map = map_info.map
+    map_shape = map_info.map.shape
+
+    # 检查点是否在地图内
+    start_in_map = 0 <= start_cell[0] < map_shape[1] and 0 <= start_cell[1] < map_shape[0]
+    end_in_map = 0 <= end_cell[0] < map_shape[1] and 0 <= end_cell[1] < map_shape[0]
+    
+    # 如果两点都在地图外，直接返回未知
+    if not start_in_map and not end_in_map:
+        return UNKNOWN
+    
+    # 如果起点在地图外，找最近的边界点
+    if not start_in_map:
+        start_cell = clip_to_map_boundary(start_cell, map_shape)
+    
+    # 如果终点在地图外，找最近的边界点
+    if not end_in_map:
+        end_cell = clip_to_map_boundary(end_cell, map_shape)
 
     x0 = start_cell[0]
     y0 = start_cell[1]
@@ -392,10 +409,10 @@ def check_collision(start, end, map_info):
         if x == x1 and y == y1:
             break
         if k == OCCUPIED:
-            collision = True
+            collision = OCCUPIED
             break
         if k == UNKNOWN:
-            collision = True
+            collision = UNKNOWN
             break
         if error > 0:
             x += x_inc
@@ -405,6 +422,33 @@ def check_collision(start, end, map_info):
             error += dx
     return collision
 
+def clip_to_map_boundary(cell, map_shape):
+    """
+    将地图外的点裁剪到最近的地图边界
+    
+    参数:
+    cell: 单元格坐标 [x, y]
+    map_shape: 地图形状 (height, width)
+    
+    返回:
+    裁剪后的坐标 [x, y]
+    """
+    x, y = cell
+    width, height = map_shape[1], map_shape[0]
+    
+    # 裁剪x坐标
+    if x < 0:
+        x = 0
+    elif x >= width:
+        x = width - 1
+    
+    # 裁剪y坐标
+    if y < 0:
+        y = 0
+    elif y >= height:
+        y = height - 1
+    
+    return [x, y]
 
 def make_gif(path, n, frame_files, rate, done=None):
     """
@@ -478,9 +522,14 @@ def extract_visible_graph_from_map(map_info):
     all_points = []  # 存储所有点 (x, y)
     point_contour_id = []  # 存储每个点所属的轮廓ID
     contour_sampled_points = []  # 存储每个轮廓的采样点（用于最终输出）
+    original_min_size = 3  # 2×2像素的原始障碍物
+    dilated_min_area = (original_min_size + 2 * 3) ** 2
+    min_contour_area = dilated_min_area
+    # min_contour_area = 20.0  # 定义最小轮廓面积阈值
+    contours = [c for c in contours if cv2.contourArea(c) > min_contour_area]
 
     for idx, contour in enumerate(contours):
-        epsilon = 0.005 * cv2.arcLength(contour, True)   # 逼近精度阈值，表示原始曲线与近似多边形之间的最大距离。值越小，近似结果越接近原始曲线。
+        epsilon = 3   # 逼近精度阈值，表示原始曲线与近似多边形之间的最大距离。值越小，近似结果越接近原始曲线。
         approx = cv2.approxPolyDP(contour, epsilon, True)
         # 提取轮廓点
         points = approx[:, 0, :]  # 去掉冗余维度
@@ -508,7 +557,8 @@ def extract_visible_graph_from_map(map_info):
             line_mask = dilated_line.astype(bool)
 
             # 如果线段不穿过任何障碍物，则标记为可见
-            if not np.any(map_info.map[line_mask] == 1):
+            if not np.any(map_info.map[line_mask] == OCCUPIED) and \
+                check_collision(np.array(p1), np.array(p2), map_info, False) == False:
                 visibility_matrix[i, j] = True
                 visibility_matrix[j, i] = True  # 对称矩阵
 

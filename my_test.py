@@ -26,3 +26,4 @@ worker.run_episode()
 
 job_results = worker.episode_buffer
 perf_metrics = worker.perf_metrics
+print(job_results[0])

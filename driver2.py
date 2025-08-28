@@ -15,7 +15,7 @@ os.environ["LOG_FILE_PATH"] = f"app.log"
 from log_config import logger
 sys.setrecursionlimit(10000)
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5,6" 
+os.environ["CUDA_VISIBLE_DEVICES"] = "3,4" 
 
 # 直接使用logger
 logger.info("Welcome to RL autonomous exploration!")
@@ -173,7 +173,14 @@ def main():
                     sample_indices = random.sample(indices, BATCH_SIZE)
                     rollouts = []
                     for i in range(len(experience_buffer)):
-                        rollouts.append([experience_buffer[i][index] for index in sample_indices])
+                        try:
+                            rollouts.append([experience_buffer[i][index] for index in sample_indices])
+                        except:
+                            print(f"experience_buffer 长度: {len(experience_buffer)}")
+                            print(f"当前 i 值: {i}")
+                            print(f"experience_buffer[i] 长度: {len(experience_buffer[i])}")
+                            print(f"sample_indices 中的最大索引: {max(sample_indices) if sample_indices else '空'}")
+                            raise
 
                     # stack batch data to tensors
                     node_inputs = torch.stack(rollouts[0]).to(device)

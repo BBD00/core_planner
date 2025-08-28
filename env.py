@@ -73,7 +73,7 @@ class Env:
         else:
             ground_truth = ground_truth.astype(int)
         # 使用block_reduce进行2x2的降采样(取最小值) 最小池化
-        ground_truth = block_reduce(ground_truth, 2, np.min)
+        # ground_truth = block_reduce(ground_truth, 2, np.min)
         # 找到标记为208的像素点作为机器人初始位置
         robot_cell = np.nonzero(ground_truth == 208)
         # 这里交换是因为np.nonzero返回的是（行、列）索引，而x是列索引，y是行索引
@@ -170,7 +170,7 @@ class Env:
         else:
             observed_frontiers = self.global_frontiers - global_frontiers
             delta_num = len(observed_frontiers)
-        reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
+        # reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
 
         # reward += min(1 / (np.linalg.norm(self.robot_location - goal_point) + 1e-10) * 2, 2)
         current_distance = np.linalg.norm(self.robot_location - goal_point)
@@ -195,15 +195,6 @@ class Env:
             # 对长时间停滞施加指数惩罚
             if self.stagnation_time > 5:  # 连续5步停滞
                 reward -= min(0.5 * (self.stagnation_time - 5), 5) 
-                # print(f"{self.episode_index}触发停滞,now{current_x, current_y},pre{prev_x, prev_y}")
-                logger.info(
-                            f"{self.episode_index}触发停滞,now{current_x, current_y},pre{prev_x, prev_y}, "
-                            f"reward:+{delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)},"
-                            f"{min(1 / (np.linalg.norm(self.robot_location - goal_point) + 1e-10) * 10, 10)},"
-                            f"{movement / UPDATING_MAP_SIZE * 5},"
-                            f"{min(0.5 * (self.stagnation_time - 5), 5)}"
-                        )
-        # reward -= min(1 / (np.linalg.norm(self.robot_location - np.array(self.trajectory_x[-1], self.trajectory_y[-1])) + 1e-10) * 5, 5)
 
         self.global_frontiers = global_frontiers
         self.old_belief = deepcopy(self.robot_belief)
