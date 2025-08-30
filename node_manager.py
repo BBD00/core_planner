@@ -148,13 +148,13 @@ class NodeManager:
                     node.noise_flag = False
                     node.update_node_observable_frontiers(frontiers, updating_map_info, map_info)
                     node.update_neighbor_set(egdes_coord, self.nodes_dict)
-                    
-                all_node_list.append(node)
         # 为起点单独增加
         if not self.check_node_exist_in_dict(robot_location):
             all_node_list.append(self.add_node_to_dict(deepcopy(robot_location), frontiers, [], updating_map_info))
         if not self.check_node_exist_in_dict(self.goal_point):
             all_node_list.append(self.add_node_to_dict(self.goal_point, frontiers, [], updating_map_info))
+        else:
+            all_node_list.append(self.check_node_exist_in_dict(self.goal_point).data)
             # logger.debug("goal_point is move")
         # 增加cluster的聚类节点
         if frontiers:
