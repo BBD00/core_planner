@@ -170,7 +170,7 @@ class Env:
         else:
             observed_frontiers = self.global_frontiers - global_frontiers
             delta_num = len(observed_frontiers)
-        # reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
+        reward += delta_num / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
 
         # reward += min(1 / (np.linalg.norm(self.robot_location - goal_point) + 1e-10) * 2, 2)
         current_distance = np.linalg.norm(self.robot_location - goal_point)

@@ -268,15 +268,16 @@ def frontier_down_sample(data, voxel_size=FRONTIER_CELL_SIZE):
     downsampled_data = set(map(tuple, voxel_dict.values()))
     return downsampled_data
 
-def cluster_frontiers(frontier_set, distance_threshold=2.0, min_points=MIN_CLUSTER_NUM):
+def cluster_frontiers(frontier_set, distance_threshold=2.0, min_points=MIN_CLUSTER_NUM, max_cluster_size=MAX_CLUSTER_NUM):
     """
-    聚合离散的frontier点，忽略小簇
-
+    基于网格的快速边界点聚类算法
+    
     参数:
         frontier_set: 包含frontier点的集合，每个点是二维坐标 (x, y)
-        distance_threshold: 两个点被视为属于同一聚类的最大距离
-        min_points: 簇的最小点数阈值（点数小于此值的簇将被忽略）
-
+        distance_threshold: 网格大小，用于聚类
+        min_points: 簇的最小点数阈值
+        max_cluster_size: 最大簇大小，超过此值的簇将被切分
+    
     返回:
         clustered_frontiers: 聚类后的frontier点集合
     """
@@ -284,44 +285,126 @@ def cluster_frontiers(frontier_set, distance_threshold=2.0, min_points=MIN_CLUST
         return set()
 
     points = list(frontier_set)
-    n = len(points)
-    visited = [False] * n
+    grid_size = distance_threshold
+    
+    # 使用字典进行网格聚类 - O(n)
+    grid_dict = {}
+    for point in points:
+        # 计算网格索引
+        grid_x = int(point[0] // grid_size)
+        grid_y = int(point[1] // grid_size)
+        grid_key = (grid_x, grid_y)
+        
+        if grid_key not in grid_dict:
+            grid_dict[grid_key] = []
+        grid_dict[grid_key].append(point)
+    
+    # 合并相邻网格形成簇
     clusters = []
-    sq_threshold = distance_threshold ** 2  # 使用平方距离避免开方计算
-
-    # 优化的距离计算函数
-    def within_threshold(i, j):
-        dx = points[i][0] - points[j][0]
-        dy = points[i][1] - points[j][1]
-        return dx * dx + dy * dy <= sq_threshold
-
-    for i in range(n):
-        if visited[i]:
+    processed_grids = set()
+    
+    for grid_key in grid_dict:
+        if grid_key in processed_grids:
             continue
-
-        cluster = []
-        queue = deque([i])
-        visited[i] = True
-
+            
+        # 使用BFS合并相邻网格
+        cluster_points = []
+        queue = deque([grid_key])
+        processed_grids.add(grid_key)
+        
         while queue:
-            idx = queue.popleft()  # O(1)操作
-            cluster.append(points[idx])
-
-            for j in range(n):
-                if not visited[j] and within_threshold(idx, j):
-                    visited[j] = True
-                    queue.append(j)
-
-        clusters.append(cluster)
-
-    # 高效计算质心
-    centroids = set()
+            current_grid = queue.popleft()
+            cluster_points.extend(grid_dict[current_grid])
+            
+            # 检查8个相邻网格
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    if dx == 0 and dy == 0:
+                        continue
+                    neighbor_grid = (current_grid[0] + dx, current_grid[1] + dy)
+                    if (neighbor_grid in grid_dict and 
+                        neighbor_grid not in processed_grids):
+                        processed_grids.add(neighbor_grid)
+                        queue.append(neighbor_grid)
+        
+        if len(cluster_points) >= min_points:
+            clusters.append(cluster_points)
+    
+    # 处理过大的簇 - 简单的空间切分
+    final_clusters = []
     for cluster in clusters:
+        if len(cluster) <= max_cluster_size:
+            final_clusters.append(cluster)
+        else:
+            # 简单的空间切分
+            sub_clusters = split_large_cluster_simple(cluster, max_cluster_size)
+            final_clusters.extend(sub_clusters)
+    
+    # 计算质心
+    centroids = set()
+    for cluster in final_clusters:
         if len(cluster) >= min_points:
             arr = np.array(cluster)
             centroids.add(tuple(arr.mean(axis=0)))
-
+    
     return centroids
+
+def split_large_cluster_simple(cluster_points, max_size):
+    """
+    简单的大簇切分方法 - 基于空间划分
+    
+    参数:
+        cluster_points: 簇中的点列表
+        max_size: 最大簇大小
+    
+    返回:
+        切分后的子簇列表
+    """
+    if len(cluster_points) <= max_size:
+        return [cluster_points]
+    
+    # 计算边界框
+    points_array = np.array(cluster_points)
+    min_coords = points_array.min(axis=0)
+    max_coords = points_array.max(axis=0)
+    
+    # 计算需要的分割数
+    num_splits = max(2, int(np.ceil(len(cluster_points) / max_size)))
+    grid_size = int(np.ceil(np.sqrt(num_splits)))
+    
+    # 计算每个网格的大小
+    x_step = (max_coords[0] - min_coords[0]) / grid_size if max_coords[0] > min_coords[0] else 1.0
+    y_step = (max_coords[1] - min_coords[1]) / grid_size if max_coords[1] > min_coords[1] else 1.0
+    
+    # 如果范围太小，直接平均分割
+    if x_step < 0.1 or y_step < 0.1:
+        # 简单的线性分割
+        chunk_size = max_size
+        return [cluster_points[i:i+chunk_size] for i in range(0, len(cluster_points), chunk_size)]
+    
+    # 空间网格分割
+    sub_clusters_dict = {}
+    for point in cluster_points:
+        grid_x = min(int((point[0] - min_coords[0]) / x_step), grid_size - 1)
+        grid_y = min(int((point[1] - min_coords[1]) / y_step), grid_size - 1)
+        grid_key = (grid_x, grid_y)
+        
+        if grid_key not in sub_clusters_dict:
+            sub_clusters_dict[grid_key] = []
+        sub_clusters_dict[grid_key].append(point)
+    
+    # 如果某些子簇仍然太大，进一步分割
+    final_sub_clusters = []
+    for sub_cluster in sub_clusters_dict.values():
+        if len(sub_cluster) <= max_size:
+            final_sub_clusters.append(sub_cluster)
+        else:
+            # 递归分割（最多2层递归）
+            chunk_size = max_size
+            chunks = [sub_cluster[i:i+chunk_size] for i in range(0, len(sub_cluster), chunk_size)]
+            final_sub_clusters.extend(chunks)
+    
+    return final_sub_clusters
 
 def is_frontier(location, map_info):
     """

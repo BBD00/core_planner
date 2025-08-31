@@ -182,10 +182,10 @@ class NodeManager:
         robot_location: 机器人当前位置
         """
         # 获取当前更新区域内的所有节点
-        bb = quads.BoundingBox(min_x=robot_location[0] - UPDATING_MAP_SIZE / 2 - 10, 
-                               min_y=robot_location[1] - UPDATING_MAP_SIZE / 2 - 10,
-                               max_x=robot_location[0] + UPDATING_MAP_SIZE / 2 + 10, 
-                               max_y=robot_location[1] + UPDATING_MAP_SIZE / 2 + 10)
+        bb = quads.BoundingBox(min_x=robot_location[0] - UPDATING_MAP_SIZE / 2 - 15, 
+                               min_y=robot_location[1] - UPDATING_MAP_SIZE / 2 - 15,
+                               max_x=robot_location[0] + UPDATING_MAP_SIZE / 2 + 15, 
+                               max_y=robot_location[1] + UPDATING_MAP_SIZE / 2 + 15)
         nodes_in_range = self.nodes_dict.within_bb(bb)
         
         if len(nodes_in_range) < 3:
