@@ -3,7 +3,7 @@ FOLDER_NAME = 'core'
 model_path = f'model/{FOLDER_NAME}'
 train_path = f'train/{FOLDER_NAME}'
 gifs_path = f'gifs/{FOLDER_NAME}'
-map_path = f'/data/kjt_data/code/vitr/maps'
+map_path = f'/data/kjt_data/code/ARiADNE/maps'
 
 # save training data
 SUMMARY_WINDOW = 32  # how many training steps before writing data to tensorboard
@@ -42,6 +42,7 @@ STAY_WINDOW_SIZE = 20
 
 # 边界聚类最小值
 MIN_CLUSTER_NUM = 7
+MAX_CLUSTER_NUM = 25
 
 # training parameters
 MAX_EPISODE_STEP = 250  #128
