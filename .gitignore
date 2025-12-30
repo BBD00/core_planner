@@ -11,3 +11,4 @@ gifs/
 *.gif
 *.pyc
 __pycache__/
+utils_test.py

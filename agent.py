@@ -154,6 +154,7 @@ class Agent:
                                        self.map_info)
         self.node_coords, self.utility, self.goal_distance, self.stay_count, self.adjacent_matrix, self.current_index, self.neighbor_indices = \
             self.update_observation()
+        
 
     def update_observation(self):
         """
@@ -169,8 +170,10 @@ class Agent:
         """
         # 收集所有节点的坐标
         all_node_coords = []
-        for node in self.node_manager.nodes_dict.__iter__():    # 遍历四叉树中的所有节点
-            all_node_coords.append(node.data.coords)            # 收集节点坐标
+        all_node_ids = []
+        for id, node in self.node_manager.id_to_node.items():   # 遍历四叉树中的所有节点
+            all_node_coords.append(node.coords)                 # 收集节点坐标
+            all_node_ids.append(id)                              # 收集节点ID
         all_node_coords = np.array(all_node_coords).reshape(-1, 2)  # 转换为numpy数组
         utility = []
         # guidepost = [] # 即是否visited
@@ -183,14 +186,14 @@ class Agent:
         node_coords_to_check = all_node_coords[:, 0] + all_node_coords[:, 1] * 1j
         # 构建邻接矩阵和收集效用值
         for i, coords in enumerate(all_node_coords):        # 遍历所有节点坐标
-            node = self.node_manager.nodes_dict.find((coords[0], coords[1])).data     # 获取节点
+            node = self.node_manager.id_to_node.get(all_node_ids[i])  # 获取节点
             utility.append(node.utility)                    # 收集节点效用值
             # guidepost.append(node.visited)
             distance.append(np.linalg.norm(node.coords - self.goal_point))
             stay_count.append(get_stay_count(node.coords, self.trajectory_x, self.trajectory_y))
-            for neighbor in node.neighbor_edges_set:              # 遍历节点的邻居
+            for id, neighbor_coords in node.neighbor_coords_dist.items():              # 遍历节点的邻居
                 # 在所有节点中查找邻居索引
-                index = np.argwhere(node_coords_to_check == neighbor[0] + neighbor[1] * 1j)     # 返回二维数组  # [[1] [3]]
+                index = np.argwhere(node_coords_to_check == neighbor_coords[0] + neighbor_coords[1] * 1j)     # 返回二维数组  # [[1] [3]]
                 # assert index is not None
                 # index = index[0][0]
                 # adjacent_matrix[i, index] = 0
@@ -363,8 +366,8 @@ class Agent:
                 pickle.dump(error_info, f)
 
         # 调试信息准备
-        node = self.node_manager.nodes_dict.find((self.location[0], self.location[1]))
-        check = np.array(list(node.data.neighbor_edges_set)).reshape(-1, 2)
+        node = self.node_manager.get_node(self.location.tolist())
+        check = np.array(node.get_neighbor_coords()).reshape(-1, 2)
         # 检查条件
         next_pos_complex = next_position[0] + next_position[1] * 1j
         check_complex = check[:, 0] + check[:, 1] * 1j
@@ -377,7 +380,7 @@ class Agent:
             error_info = {
                 "next_position": next_position,
                 "current_location": self.location,
-                "neighbor_edges_set": node.data.neighbor_edges_set,
+                "neighbor_edges_set": node.get_neighbor_coords(),
                 "logp": logp,
                 "action_index": action_index,
                 "current_edge": current_edge,
@@ -400,14 +403,14 @@ class Agent:
             logger.warning(f"Assertion failed! Full debug info saved to {filename}")
         
         # 原始断言
-        assert condition, print(next_position, self.location, node.data.neighbor_edges_set, logp)
+        assert condition, print(next_position, self.location, node.get_neighbor_coords(), logp)
 
 
         return next_position, action_index
 
     def plot_env(self):
-        plt.switch_backend('agg')
-
+        # plt.switch_backend('Tkagg')
+        # plt.ion()  # 开启交互模式
         plt.figure(figsize=(18, 5))
         plt.subplot(1, 3, 2)
         nodes = get_cell_position_from_coords(self.node_coords, self.map_info)
@@ -429,8 +432,8 @@ class Agent:
         plt.plot(robot[0], robot[1], 'mo', markersize=16, zorder=5)
         plt.plot(goal_cell[0], goal_cell[1], 'ro', markersize=10, zorder=5)
         for coords in self.node_coords:
-            node = self.node_manager.nodes_dict.find(coords.tolist()).data
-            for neighbor_coords in node.neighbor_edges_set:
+            node = self.node_manager.get_node(coords.tolist())
+            for neighbor_coords in node.get_neighbor_coords():
                 end = (np.array(neighbor_coords) - coords) / 2 + coords
                 plt.plot((np.array([coords[0], end[0]]) - self.map_info.map_origin_x) / self.cell_size,
                                (np.array([coords[1], end[1]]) - self.map_info.map_origin_y) / self.cell_size, 'tan', zorder=1)
@@ -441,8 +444,8 @@ class Agent:
         plt.scatter(nodes[:, 0], nodes[:, 1], c=self.utility, zorder=2)
         plt.plot(robot[0], robot[1], 'mo', markersize=4, zorder=5)
         plt.plot(goal_cell[0], goal_cell[1], 'ro', markersize=4, zorder=5)
-        node = self.node_manager.nodes_dict.find(self.location.tolist()).data
-        for neighbor_coords in node.neighbor_edges_set:
+        node = self.node_manager.get_node(self.location.tolist())
+        for neighbor_coords in node.get_neighbor_coords():
             end = (np.array(neighbor_coords) - self.location) + self.location
             plt.plot((np.array([self.location[0], end[0]]) - self.map_info.map_origin_x) / self.cell_size,
                      (np.array([self.location[1], end[1]]) - self.map_info.map_origin_y) / self.cell_size, 'tan', zorder=1)
@@ -458,5 +461,10 @@ class Agent:
                              linewidth=2, edgecolor='cyan', facecolor='none', zorder=6)
         plt.gca().add_patch(rect)
         # plt.show()
+        # plt.draw()
+        # plt.pause(0.1)  # 暂停一小段时间让窗口显示
+        # # plt.show(block=False)  # 或使用这个
+        
+        # plt.ioff()  # 关闭交互模式
 
 

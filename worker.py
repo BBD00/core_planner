@@ -67,46 +67,46 @@ class Worker:
             self.env.plot_env(0)
 
         for i in range(MAX_EPISODE_STEP):
-            try:
-                self.save_observation(observation)
+            # try:
+            self.save_observation(observation)
 
-                next_location, action_index = self.robot.select_next_waypoint(observation)
-                self.save_action(action_index)
+            next_location, action_index = self.robot.select_next_waypoint(observation)
+            self.save_action(action_index)
 
-                node = self.robot.node_manager.nodes_dict.find((self.robot.location[0], self.robot.location[1]))
-                check = np.array(list(node.data.neighbor_edges_set)).reshape(-1, 2)
-                assert next_location[0] + next_location[1] * 1j in check[:, 0] + check[:, 1] * 1j, print(self.global_step,next_location, self.robot.location, check)
-                assert next_location[0] != self.robot.location[0] or next_location[1] != self.robot.location[1]
+            node = self.robot.node_manager.id_to_node.get(self.robot.node_manager.robot_id)
+            check = np.array(node.get_neighbor_coords()).reshape(-1, 2)
+            assert next_location[0] + next_location[1] * 1j in check[:, 0] + check[:, 1] * 1j, print(self.global_step,next_location, self.robot.location, check)
+            assert next_location[0] != self.robot.location[0] or next_location[1] != self.robot.location[1]
 
-                reward = self.env.step(next_location, self.robot.goal_point, self.robot.updating_map_info)  # 更新env中的机器人位置、进行新的传感器检测
+            reward = self.env.step(next_location, self.robot.goal_point, self.robot.updating_map_info)  # 更新env中的机器人位置、进行新的传感器检测
 
-                self.robot.update_planning_state(self.env.belief_info, self.env.robot_location)
-                if np.linalg.norm(self.robot.location - self.robot.goal_point) <= END_MIN_DISTANCE: # np.array_equal(self.robot.location, self.robot.goal_point) self.robot.utility.sum() == 0
-                    done = True
-                    reward += 20
-                    logger.info(f"{self.global_step} done_reward:{reward}")
-                self.save_reward_done(reward, done)
+            self.robot.update_planning_state(self.env.belief_info, self.env.robot_location)
+            if np.linalg.norm(self.robot.location - self.robot.goal_point) <= END_MIN_DISTANCE: # np.array_equal(self.robot.location, self.robot.goal_point) self.robot.utility.sum() == 0
+                done = True
+                reward += 20
+                logger.info(f"{self.global_step} done_reward:{reward}")
+            self.save_reward_done(reward, done)
 
-                observation = self.robot.get_observation()
-                self.save_next_observations(observation)
+            observation = self.robot.get_observation()
+            self.save_next_observations(observation)
 
-                if self.save_image:
-                    # 两个都有用
-                    self.robot.plot_env()
-                    self.env.plot_env(i+1)
+            if self.save_image:
+                # 两个都有用
+                self.robot.plot_env()
+                self.env.plot_env(i+1)
 
-                if done:
-                    break
-            except Exception as e:
-                print(f'{self.global_step} failed \n')
-                logger.error(f'{self.global_step} failed: {e}\n')
+            if done:
                 break
+            # except Exception as e:
+            #     print(f'{self.global_step} failed \n')
+            #     logger.error(f'{self.global_step} failed: {e}\n')
+            #     break
 
         # save metrics
         self.perf_metrics['travel_dist'] = self.env.travel_dist
         self.perf_metrics['explored_rate'] = self.env.explored_rate
         self.perf_metrics['success_rate'] = done
-
+        print("average step time:", np.mean(np.array(self.robot.times)))
         # save gif
         if self.save_image:
             make_gif(gifs_path, self.global_step, self.env.frame_files, self.env.explored_rate, done)

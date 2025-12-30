@@ -3,7 +3,7 @@ FOLDER_NAME = 'core'
 model_path = f'model/{FOLDER_NAME}'
 train_path = f'train/{FOLDER_NAME}'
 gifs_path = f'gifs/{FOLDER_NAME}'
-map_path = f'/data/kjt_data/code/ARiADNE/maps'
+map_path = f'/home/iair/kjt_workspace/vitr/maps'
 
 # save training data
 SUMMARY_WINDOW = 32  # how many training steps before writing data to tensorboard
@@ -34,6 +34,7 @@ UPDATING_MAP_SIZE = 4 * SENSOR_RANGE + 4 * NODE_RESOLUTION  # nodes outside this
 
 # 地图可视点更新容忍值
 TOLERANCE = 0.1
+UPDATE_THRESHOLD = 5
 
 # 车辆停滞惩罚阈值
 STAGNATION_THRESHOLD = 3

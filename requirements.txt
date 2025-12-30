@@ -9,7 +9,7 @@ scikit-learn-extra==0.3.0
 scipy==1.15.3
 tensorboard==2.19.0
 tomli==2.2.1
-torch>=2.1.0
+torch>=2.1.0  # 2.1.0 is the best
 torchaudio==2.1.0
 torchvision==0.16.0
 zarr==2.18.3

@@ -1,10 +1,7 @@
-# ARiADNE
-Public code and model of <a href="https://arxiv.org/pdf/2301.11575.pdf">ARiADNE: A Reinforcement learning approach using Attention-based Deep Networks for Exploration</a>, which is accepted for the oral presentation at ICRA 2023.
+# CORE
+这里是CORE Planner: Contextual-memory Oriented Reinforcement-learning in Unknown Environments for Robot Navigation的官方实现代码。
 
-**Note**: This is a new implementation of ARiADNE. 
-You can find our original implementation in the [main branch](https://github.com/marmotlab/ARiADNE/tree/main).
-We reimplement ARiADNE to optimize the computing time, RAM/VRAM usage, and compatibility with ROS. 
-The trained model can be directly tested in our [ARiADNE ROS planner](https://github.com/marmotlab/ARiADNE-ROS-Planner).
+注意这里仅是训练代码，ROS环境下的测试代码在：https://github.com/marmotlab/ARiADNE-ROS-Planner中。
 
 
 ## Run
@@ -62,10 +59,63 @@ If you find our work helpful or enlightening, feel free to cite our paper:
   pages={10219-10225},
   doi={10.1109/ICRA48891.2023.10160565}}
 ```
+# CORE
 
-### Authors
-[Yuhong Cao](https://github.com/caoyuhong001)\
-Tianxiang Hou\
-[Yizhuo Wang](https://github.com/wyzh98)\
-Xian Yi\
-[Guillaume Sartoretti](https://github.com/gsartoretti)
+本项目包含 CORE Planner (Contextual-memory Oriented Reinforcement-learning) 的训练代码实现。以下是配置环境和开始训练的步骤。
+
+## 1. 环境配置
+
+首先，建议使用 Conda 创建一个独立的虚拟环境，以避免依赖冲突。推荐使用 Python 3.8。
+
+```bash
+# 创建名为 vitr 的虚拟环境，指定 Python 版本为 3.8
+conda create -n core python=3.10
+
+# 激活环境
+conda activate core
+```
+
+## 2. 安装依赖
+
+项目根目录下提供了 requirements.txt 文件，其中列出了训练所需的所有 Python 依赖包。请在激活环境后运行以下命令进行安装：
+
+```bash
+# filepath: /home/iair/kjt_workspace/vitr/README.md
+pip install -r requirements.txt
+```
+
+*注意：如果安装过程中遇到 PyTorch 或 Ray 相关的版本问题，请根据你的 CUDA 版本去 PyTorch 官网查找对应的安装命令。*
+
+## 3. 开始训练
+
+训练的入口脚本是 driver.py。在运行之前，你可以根据需要修改 parameter.py 中的超参数（如学习率、GPU 设置、训练轮数等）。
+
+运行以下命令开始训练：
+
+```bash
+# 运行训练驱动脚本
+# RAY_DEDUP_LOGS=0 用于减少 Ray 框架的重复日志输出（可选）
+RAY_DEDUP_LOGS=0 python driver.py
+```
+
+## 4. 项目文件说明
+
+*   **driver.py**: 训练程序的主驱动文件，负责维护和更新全局网络。
+*   **parameter.py**: 包含所有训练相关的超参数配置。
+*   **worker.py**: 工作节点逻辑，负责与环境交互并收集经验。
+*   **model.py**: 定义了基于注意力的深度神经网络模型结构。
+*   **env.py**: 自主探索环境的定义。
+*   **requirements.txt**: 项目依赖列表。
+
+## 5. 致谢
+
+本项目基于 ARiADNE 的代码实现。如果您觉得这项工作有帮助或有启发，请引用原作者的论文：
+
+```bibtex
+@INPROCEEDINGS{cao2023ariadne,
+  author={Cao, Yuhong and Hou, Tianxiang and Wang, Yizhuo and Yi, Xian and Sartoretti, Guillaume},
+  booktitle={2023 IEEE International Conference on Robotics and Automation (ICRA)}, 
+  title={ARiADNE: A Reinforcement learning approach using Attention-based Deep Networks for Exploration}, 
+  year={2023},
+  pages={10219-10225},
+  doi={10.1109/ICRA48891.2023.10160565}}
