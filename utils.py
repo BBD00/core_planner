@@ -2,13 +2,17 @@ import numpy as np
 import imageio
 import os
 from skimage.morphology import label
-
-import quads
+from numba import jit, njit
 from parameter import *
 import matplotlib.pyplot as plt
 import cv2
 from itertools import combinations
 from collections import deque
+
+# ROS 接口
+_FREE = FREE  # 0
+_OCCUPIED = OCCUPIED  # 100
+_UNKNOWN = UNKNOWN  # parameter.UNKNOWN 
 
 
 def get_cell_position_from_coords(coords, map_info, check_negative=True):
@@ -84,134 +88,45 @@ def get_free_and_connected_map(location, map_info):
     return connected_free_map
 
 
-def get_updating_node_coords(location, updating_map_info, check_connectivity=True):
-    """
-    获取需要更新节点的坐标
-    即获取局部地图地图中与传入世界位置相连的可行区域
-    参数:
-    location: 当前位置的世界坐标
-    updating_map_info: 地图信息对象
-    check_connectivity: 是否检查连通性
-
-    返回:
-    可更新节点的世界坐标和连通的空闲区域地图(如果检查连通性)
-    """
-    # 计算地图边界的世界坐标
-    x_min = updating_map_info.map_origin_x
-    y_min = updating_map_info.map_origin_y
-    x_max = updating_map_info.map_origin_x + (updating_map_info.map.shape[1] - 1) * CELL_SIZE
-    y_max = updating_map_info.map_origin_y + (updating_map_info.map.shape[0] - 1) * CELL_SIZE
-    # 调整边界，使其成为NODE_RESOLUTION的整数倍，方便进行采样得到点云点
-    if x_min % NODE_RESOLUTION != 0:
-        x_min = (x_min // NODE_RESOLUTION + 1) * NODE_RESOLUTION
-    if x_max % NODE_RESOLUTION != 0:
-        x_max = x_max // NODE_RESOLUTION * NODE_RESOLUTION
-    if y_min % NODE_RESOLUTION != 0:
-        y_min = (y_min // NODE_RESOLUTION + 1) * NODE_RESOLUTION
-    if y_max % NODE_RESOLUTION != 0:
-        y_max = y_max // NODE_RESOLUTION * NODE_RESOLUTION
-    # 创建均匀分布的坐标网格
-    x_coords = np.arange(x_min, x_max + 0.1, NODE_RESOLUTION)
-    y_coords = np.arange(y_min, y_max + 0.1, NODE_RESOLUTION)
-    t1, t2 = np.meshgrid(x_coords, y_coords)
-    # .ravel()将多维数组按行优先顺序
-    # x_coords = [1, 2], y_coords = [3, 4]
-    # t1 = [[1, 2],  t2 = [[3, 3],
-    #        [1, 2]]       [4, 4]]
-    # t1.T = [[1, 1],
-    #        [2, 2]]
-    # t1.T.ravel() = [1, 1, 2, 2] t2.T.ravel() = [3, 4, 3, 4]
-    # nodes = [[1, 3],
-    #           [1, 4],
-    #           [2, 3],
-    #           [2, 4]]
-    nodes = np.vstack([t1.T.ravel(), t2.T.ravel()]).T
-    nodes = np.around(nodes, 1)
-
-    free_connected_map = None
-
-    if not check_connectivity:
-
-        indices = []
-        nodes_cells = get_cell_position_from_coords(nodes, updating_map_info).reshape(-1, 2)
-        for i, cell in enumerate(nodes_cells):
-            assert 0 <= cell[1] < updating_map_info.map.shape[0] and 0 <= cell[0] < updating_map_info.map.shape[1]
-            if updating_map_info.map[cell[1], cell[0]] == FREE:
-                indices.append(i)
-        indices = np.array(indices)
-        nodes = nodes[indices].reshape(-1, 2)
-
-    else:# 如果需要检查连通性
-        # 获取与当前位置相连的空闲区域地图 0,1地图 1是连通
-        free_connected_map = get_free_and_connected_map(location, updating_map_info)
-        free_connected_map = np.array(free_connected_map)
-
-        indices = []
-        nodes_cells = get_cell_position_from_coords(nodes, updating_map_info).reshape(-1, 2)    # 实际是整个局部地图都进行
-        for i, cell in enumerate(nodes_cells):
-            assert 0 <= cell[1] < free_connected_map.shape[0] and 0 <= cell[0] < free_connected_map.shape[1]
-            if free_connected_map[cell[1], cell[0]] == 1:   # 如果单元格在连通的空闲区域内
-                indices.append(i)
-        indices = np.array(indices)
-        nodes = nodes[indices].reshape(-1, 2)    # 只保留连通区域的节点
-
-    return nodes, free_connected_map    # 返回节点坐标和整个地图的连通地图
-
+@njit(cache=True)
+def _find_frontier_indices(map_data, unknown_neighbor):
+    """Numba 加速的边界点查找"""
+    y_len, x_len = map_data.shape
+    indices = []
+    for y in range(y_len):
+        for x in range(x_len):
+            if map_data[y, x] == _FREE:  # FREE
+                neighbor_count = unknown_neighbor[y, x]
+                if 1 < neighbor_count < 8:
+                    indices.append(x * y_len + y)  # 列优先索引
+    return np.array(indices, dtype=np.int64)
 
 def get_frontier_in_map(map_info):
-    """
-    获取地图中的边界区域(已知区域与未知区域的交界)
-
-    参数:
-    map_info: 地图信息对象
-    voxel_size: 边界单元格大小  1.6
-
-    返回:
-    边界区域的坐标集合 N*2
-    """
     x_len = map_info.map.shape[1]
     y_len = map_info.map.shape[0]
-    unknown = (map_info.map == UNKNOWN) * 1
-    unknown = np.lib.pad(unknown, ((1, 1), (1, 1)), 'constant', constant_values=0)
-    unknown_neighbor = unknown[2:][:, 1:x_len + 1] + unknown[:y_len][:, 1:x_len + 1] + unknown[1:y_len + 1][:, 2:] \
-                       + unknown[1:y_len + 1][:, :x_len] + unknown[:y_len][:, 2:] + unknown[2:][:, :x_len] + \
-                       unknown[2:][:, 2:] + unknown[:y_len][:, :x_len]
-    # 找出所有空闲单元格的索引 np.where返回索引
-    # 先按列优先展开
-    # map_info.map = np.array([
-    #     [1, 2, 3],  # 第0行
-    #     [4, 5, 6]   # 第1行
-    # ])
-    # 展开后[1, 4, 2, 5, 3, 6]  # 先列后行
-    free_cell_indices = np.where(map_info.map.ravel(order='F') == FREE)[0]
-    frontier_cell_1 = np.where(1 < unknown_neighbor.ravel(order='F'))[0]
-    frontier_cell_2 = np.where(unknown_neighbor.ravel(order='F') < 8)[0]
-    frontier_cell_indices = np.intersect1d(frontier_cell_1, frontier_cell_2)
-    frontier_cell_indices = np.intersect1d(free_cell_indices, frontier_cell_indices)
+    
+    # 使用更高效的卷积计算未知邻居数
+    unknown = (map_info.map == UNKNOWN).astype(np.uint8)
+    kernel = np.ones((3, 3), dtype=np.uint8)
+    kernel[1, 1] = 0
+    unknown_neighbor = cv2.filter2D(unknown, -1, kernel)
+    
+    # 使用 Numba 加速的查找
+    frontier_indices = _find_frontier_indices(map_info.map, unknown_neighbor)
+    
+    if frontier_indices.size == 0:
+        return set()
+    
+    # 转换索引为坐标
+    frontier_x = frontier_indices // y_len
+    frontier_y = frontier_indices % y_len
+    frontier_cell = np.column_stack((frontier_x, frontier_y))
+    
+    frontier_coords = get_coords_from_cell_position(frontier_cell, map_info)
+    if FRONTIER_CELL_SIZE != CELL_SIZE:
+        return frontier_down_sample(frontier_coords)
+    return set(map(tuple, frontier_coords))
 
-    x = np.linspace(0, x_len - 1, x_len)
-    y = np.linspace(0, y_len - 1, y_len)
-    t1, t2 = np.meshgrid(x, y)
-    # 按列展开与前面一致这样可以直接索引
-    # cells = [[0 0]    # 坐标(0,0)
-    #          [0 1]    # 坐标(0,1)
-    #          [0 2]    # 坐标(0,2)
-    #          [0 3]    # 坐标(0,3)
-    #          [0 4]    # 坐标(0,4)
-    #          [1 0]    # 坐标(1,0)
-    #          [1 1]    # 坐标(1,1)
-    #          ...
-    #          [4 4]]   # 坐标(4,4)
-    cells = np.vstack([t1.T.ravel(), t2.T.ravel()]).T
-    frontier_cell = cells[frontier_cell_indices]
-
-    frontier_coords = get_coords_from_cell_position(frontier_cell, map_info).reshape(-1, 2)
-    if frontier_cell.shape[0] > 0 and FRONTIER_CELL_SIZE != CELL_SIZE:
-        frontier_coords = frontier_coords.reshape(-1 ,2)
-        frontier_coords = frontier_down_sample(frontier_coords)
-    else:
-        frontier_coords = set(map(tuple, frontier_coords))
-    return frontier_coords
 
 def get_stay_count(current_position, past_trajectory_x, past_trajectory_y, window_size=STAY_WINDOW_SIZE, threshold=STAY_DIS_THRESHOLD):
     """
@@ -229,7 +144,7 @@ def get_stay_count(current_position, past_trajectory_x, past_trajectory_y, windo
     """
     # 确保有足够的历史轨迹点
     if len(past_trajectory_x) < window_size:
-        return 0
+        window_size = len(past_trajectory_x)
     # 获取最近的window_size个历史位置
     # recent_x = past_trajectory_x[-window_size:]
     # recent_y = past_trajectory_y[-window_size:]
@@ -240,33 +155,54 @@ def get_stay_count(current_position, past_trajectory_x, past_trajectory_y, windo
     close_count = np.sum(distances < threshold)
     return close_count
 
+
+@njit(cache=True)
+def _downsample_core(data, voxel_indices):
+    """Numba 加速的下采样核心逻辑"""
+    n = data.shape[0]
+    if n == 0:
+        return np.empty((0, 2), dtype=np.float64)
+    
+    # 手动实现 unique：使用排序 + 去重
+    # 将2D索引转换为1D用于排序
+    max_y = np.max(voxel_indices[:, 1]) + 1
+    keys = voxel_indices[:, 0] * max_y + voxel_indices[:, 1]
+    
+    # 获取排序索引
+    sort_indices = np.argsort(keys)
+    sorted_keys = keys[sort_indices]
+    
+    # 统计唯一值数量
+    unique_count = 1
+    for i in range(1, n):
+        if sorted_keys[i] != sorted_keys[i - 1]:
+            unique_count += 1
+    
+    # 分配结果数组
+    result = np.empty((unique_count, 2), dtype=np.float64)
+    
+    # 填充结果：每个唯一体素取第一个点
+    result_idx = 0
+    result[result_idx] = data[sort_indices[0]]
+    prev_key = sorted_keys[0]
+    
+    for i in range(1, n):
+        if sorted_keys[i] != prev_key:
+            result_idx += 1
+            result[result_idx] = data[sort_indices[i]]
+            prev_key = sorted_keys[i]
+    
+    return result
+
+
 def frontier_down_sample(data, voxel_size=FRONTIER_CELL_SIZE):
-    """
-        对边界点进行下采样，减少数据量
-
-        参数:
-        data: 边界点坐标
-        voxel_size: 下采样体素大小
-
-        返回:
-        下采样后的边界点集合
-    """
-    voxel_indices = np.array(data / voxel_size, dtype=int).reshape(-1, 2)
-
-    voxel_dict = {}
-    for i, point in enumerate(data):
-        voxel_index = tuple(voxel_indices[i])
-
-        if voxel_index not in voxel_dict:
-            voxel_dict[voxel_index] = point
-        else:
-            current_point = voxel_dict[voxel_index]
-            if np.linalg.norm(point - np.array(voxel_index) * voxel_size) < np.linalg.norm(
-                    current_point - np.array(voxel_index) * voxel_size):
-                voxel_dict[voxel_index] = point
-
-    downsampled_data = set(map(tuple, voxel_dict.values()))
-    return downsampled_data
+    """对边界点进行下采样"""
+    data = np.asarray(data, dtype=np.float64).reshape(-1, 2)
+    if data.shape[0] == 0:
+        return set()
+    voxel_indices = (data / voxel_size).astype(np.int32)
+    result = _downsample_core(data, voxel_indices)
+    return set(map(tuple, result))
 
 def cluster_frontiers(frontier_set, distance_threshold=2.0, min_points=MIN_CLUSTER_NUM, max_cluster_size=MAX_CLUSTER_NUM):
     """
@@ -431,55 +367,24 @@ def is_frontier(location, map_info):
         else:
             return False
 
-def check_collision(start, end, map_info, do_trans=True):
+@njit(cache=True)
+def _bresenham_collision_check(x0, y0, x1, y1, map_data, map_height, map_width):
     """
-    使用Bresenham直线算法检查两点之间是否有障碍物
-
+    Numba 加速的 Bresenham 直线碰撞检测核心算法
+    
     参数:
-    start: 起点世界坐标
-    end: 终点世界坐标
-    map_info: 地图信息对象
-
+    x0, y0: 起点单元格坐标
+    x1, y1: 终点单元格坐标
+    map_data: 地图数据 (2D numpy array)
+    map_height, map_width: 地图尺寸
+    
     返回:
-    布尔值，表示是否存在碰撞
+    0: 无碰撞 (False)
+    1: 障碍物碰撞 (OCCUPIED)
+    127: 未知区域 (UNKNOWN)
     """
-    # Bresenham line algorithm checking
-    # assert start[0] >= map_info.map_origin_x, print(start[0],map_info.map_origin_x)
-    # assert start[1] >= map_info.map_origin_y, print(start[1],map_info.map_origin_y)
-    # assert end[0] >= map_info.map_origin_x, print(end[0],map_info.map_origin_x)
-    # assert end[1] >= map_info.map_origin_y, print(end[1],map_info.map_origin_y)
-    # assert start[0] <= map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1],print(start[0],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1])
-    # assert start[1] <= map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0],print(start[1],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[0])
-    # assert end[0] <= map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1],print(end[0],map_info.map_origin_x + map_info.cell_size * map_info.map.shape[1])
-    # assert end[1] <= map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0],print(end[1],map_info.map_origin_y + map_info.cell_size * map_info.map.shape[0])
-    collision = False
-
-    start_cell = get_cell_position_from_coords(start, map_info, check_negative=False) if do_trans else start
-    end_cell = get_cell_position_from_coords(end, map_info, check_negative=False) if do_trans else end
-    map = map_info.map
-    map_shape = map_info.map.shape
-
-    # 检查点是否在地图内
-    start_in_map = 0 <= start_cell[0] < map_shape[1] and 0 <= start_cell[1] < map_shape[0]
-    end_in_map = 0 <= end_cell[0] < map_shape[1] and 0 <= end_cell[1] < map_shape[0]
-    
-    # 如果两点都在地图外，直接返回未知
-    if not start_in_map and not end_in_map:
-        return UNKNOWN
-    
-    # 如果起点在地图外，找最近的边界点
-    if not start_in_map:
-        start_cell = clip_to_map_boundary(start_cell, map_shape)
-    
-    # 如果终点在地图外，找最近的边界点
-    if not end_in_map:
-        end_cell = clip_to_map_boundary(end_cell, map_shape)
-
-    x0 = start_cell[0]
-    y0 = start_cell[1]
-    x1 = end_cell[0]
-    y1 = end_cell[1]
-    dx, dy = abs(x1 - x0), abs(y1 - y0)
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
     x, y = x0, y0
     error = dx - dy
     x_inc = 1 if x1 > x0 else -1
@@ -487,51 +392,210 @@ def check_collision(start, end, map_info, do_trans=True):
     dx *= 2
     dy *= 2
 
-    while 0 <= x < map.shape[1] and 0 <= y < map.shape[0]:
-        k = map.item(int(y), int(x))
+    while 0 <= x < map_width and 0 <= y < map_height:
+        k = map_data[int(y), int(x)]
         if x == x1 and y == y1:
             break
-        if k == OCCUPIED:
-            collision = OCCUPIED
-            break
-        if k == UNKNOWN:
-            collision = UNKNOWN
-            break
+        if k == _OCCUPIED:  # OCCUPIED
+            return _OCCUPIED
+        if k == _UNKNOWN:  # UNKNOWN
+            return _UNKNOWN
         if error > 0:
             x += x_inc
             error -= dy
         else:
             y += y_inc
             error += dx
-    return collision
+    return 0  # False, 无碰撞
 
-def clip_to_map_boundary(cell, map_shape):
+
+@njit(cache=True)
+def _clip_to_boundary(x, y, width, height):
     """
-    将地图外的点裁剪到最近的地图边界
-    
-    参数:
-    cell: 单元格坐标 [x, y]
-    map_shape: 地图形状 (height, width)
-    
-    返回:
-    裁剪后的坐标 [x, y]
+    Numba 加速的边界裁剪
     """
-    x, y = cell
-    width, height = map_shape[1], map_shape[0]
-    
-    # 裁剪x坐标
     if x < 0:
         x = 0
     elif x >= width:
         x = width - 1
-    
-    # 裁剪y坐标
     if y < 0:
         y = 0
     elif y >= height:
         y = height - 1
+    return x, y
+
+
+@njit(cache=True)
+def _world_to_cell(coord_x, coord_y, origin_x, origin_y, cell_size):
+    """
+    Numba 加速的世界坐标转单元格坐标
+    """
+    cell_x = int(round((coord_x - origin_x) / cell_size))
+    cell_y = int(round((coord_y - origin_y) / cell_size))
+    return cell_x, cell_y
+
+
+def check_collision(start, end, map_info, do_trans=True):
+    """
+    使用 Numba 加速的 Bresenham 直线算法检查两点之间是否有障碍物
+
+    参数:
+    start: 起点世界坐标
+    end: 终点世界坐标
+    map_info: 地图信息对象
+    do_trans: 是否进行坐标转换
+
+    返回:
+    False/0: 无碰撞
+    OCCUPIED(1): 障碍物碰撞
+    UNKNOWN(127): 未知区域
+    """
+    map_data = map_info.map
+    map_height, map_width = map_data.shape
     
-    return [x, y]
+    # 坐标转换
+    if do_trans:
+        start_x, start_y = _world_to_cell(
+            float(start[0]), float(start[1]),
+            map_info.map_origin_x, map_info.map_origin_y, map_info.cell_size
+        )
+        end_x, end_y = _world_to_cell(
+            float(end[0]), float(end[1]),
+            map_info.map_origin_x, map_info.map_origin_y, map_info.cell_size
+        )
+    else:
+        start_x, start_y = int(start[0]), int(start[1])
+        end_x, end_y = int(end[0]), int(end[1])
+    
+    # 检查点是否在地图内
+    start_in_map = 0 <= start_x < map_width and 0 <= start_y < map_height
+    end_in_map = 0 <= end_x < map_width and 0 <= end_y < map_height
+    
+    # 如果两点都在地图外，直接返回未知
+    if not start_in_map and not end_in_map:
+        return _UNKNOWN
+    
+    # 边界裁剪
+    if not start_in_map:
+        start_x, start_y = _clip_to_boundary(start_x, start_y, map_width, map_height)
+    if not end_in_map:
+        end_x, end_y = _clip_to_boundary(end_x, end_y, map_width, map_height)
+    
+    # 调用 Numba 加速的核心算法
+    result = _bresenham_collision_check(
+        start_x, start_y, end_x, end_y,
+        map_data, map_height, map_width
+    )
+    
+    # 转换返回值
+    if result == 0:
+        return False
+    elif result == _OCCUPIED:
+        return _OCCUPIED
+    else:
+        return _UNKNOWN
+
+@njit(cache=True, parallel=True)
+def _batch_collision_check(starts, ends, map_data, origin_x, origin_y, cell_size):
+    """
+    批量碰撞检测 - 适用于需要检测多条线段的场景
+    
+    参数:
+    starts: 起点数组 (N, 2)
+    ends: 终点数组 (N, 2)
+    map_data: 地图数据
+    origin_x, origin_y: 地图原点
+    cell_size: 单元格大小
+    
+    返回:
+    results: 碰撞结果数组 (N,)，0=无碰撞，1=障碍物，127=未知
+    """
+    n = starts.shape[0]
+    results = np.zeros(n, dtype=np.int32)
+    map_height, map_width = map_data.shape
+    
+    for i in range(n):
+        # 坐标转换
+        x0 = int(round((starts[i, 0] - origin_x) / cell_size))
+        y0 = int(round((starts[i, 1] - origin_y) / cell_size))
+        x1 = int(round((ends[i, 0] - origin_x) / cell_size))
+        y1 = int(round((ends[i, 1] - origin_y) / cell_size))
+        
+        # 边界检查
+        start_in = 0 <= x0 < map_width and 0 <= y0 < map_height
+        end_in = 0 <= x1 < map_width and 0 <= y1 < map_height
+        
+        if not start_in and not end_in:
+            results[i] = _UNKNOWN
+            continue
+        
+        # 边界裁剪
+        if not start_in:
+            x0 = max(0, min(x0, map_width - 1))
+            y0 = max(0, min(y0, map_height - 1))
+        if not end_in:
+            x1 = max(0, min(x1, map_width - 1))
+            y1 = max(0, min(y1, map_height - 1))
+        
+        # Bresenham 算法
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        x, y = x0, y0
+        error = dx - dy
+        x_inc = 1 if x1 > x0 else -1
+        y_inc = 1 if y1 > y0 else -1
+        dx *= 2
+        dy *= 2
+        
+        collision = 0
+        while 0 <= x < map_width and 0 <= y < map_height:
+            k = map_data[y, x]
+            if x == x1 and y == y1:
+                break
+            if k == _OCCUPIED:
+                collision = _OCCUPIED
+                break
+            if k == _UNKNOWN:
+                collision = _UNKNOWN
+                break
+            if error > 0:
+                x += x_inc
+                error -= dy
+            else:
+                y += y_inc
+                error += dx
+        
+        results[i] = collision
+    
+    return results
+
+
+def batch_check_collision(starts, ends, map_info):
+    """
+    批量碰撞检测的包装函数
+    
+    参数:
+    starts: 起点数组 (N, 2) 世界坐标
+    ends: 终点数组 (N, 2) 世界坐标
+    map_info: 地图信息对象
+    
+    返回:
+    results: 碰撞结果数组
+    """
+    starts = np.asarray(starts, dtype=np.float64)
+    ends = np.asarray(ends, dtype=np.float64)
+    
+    if starts.ndim == 1:
+        starts = starts.reshape(1, 2)
+        ends = ends.reshape(1, 2)
+    
+    return _batch_collision_check(
+        starts, ends,
+        map_info.map,
+        map_info.map_origin_x,
+        map_info.map_origin_y,
+        map_info.cell_size
+    )
 
 def make_gif(path, n, frame_files, rate, done=None):
     """
@@ -588,80 +652,76 @@ def extract_visible_graph_from_map(map_info):
         每个障碍物的可见图（轮廓点 + 无碰撞边）
     """
     # 1. 创建二值障碍物掩码（障碍物=1，其他=0）
-    obstacle_mask = np.where(map_info.map == 1, 1, 0).astype(np.uint8)
-    # kernel = np.ones((2, 2), np.uint8)
-    # eroded = cv2.erode(obstacle_mask, kernel, iterations=1)
+    obstacle_mask = np.where(map_info.map == _OCCUPIED, 1, 0).astype(np.uint8)
     kernel = np.ones((3, 3), np.uint8)
     processed_mask = cv2.dilate(obstacle_mask, kernel, iterations=3)
-    # 转换为8位图像
     binary_map = np.uint8((processed_mask == 1) * 255)
 
-    # 查找轮廓
-    # contours：这是一个列表，列表中的每个元素都是一个轮廓。每个轮廓由一组点构成，其数据类型为 numpy.ndarray，形状为 (N, 1, 2)，其中 N 是轮廓上的点的数量，每个点的坐标为 (x, y)。
-    # hierarchy：这是一个 numpy.ndarray，形状为 (1, N, 4)，其中 N 是轮廓的数量。它用于表示轮廓之间的层次关系，每个轮廓对应四个整数值 [Next, Previous, First_Child, Parent]，具体含义如下：
     contours, hierarchy = cv2.findContours(binary_map, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_L1)
     visible_graphs = []
-    # 收集所有轮廓的采样点并记录轮廓ID
-    all_points = []  # 存储所有点 (x, y)
-    point_contour_id = []  # 存储每个点所属的轮廓ID
-    contour_sampled_points = []  # 存储每个轮廓的采样点（用于最终输出）
-    original_min_size = 3  # 2×2像素的原始障碍物
+    
+    all_points = []
+    point_contour_id = []
+    contour_sampled_points = []
+    
+    original_min_size = 3
     dilated_min_area = (original_min_size + 2 * 3) ** 2
     min_contour_area = dilated_min_area
-    # min_contour_area = 20.0  # 定义最小轮廓面积阈值
     contours = [c for c in contours if cv2.contourArea(c) > min_contour_area]
 
     for idx, contour in enumerate(contours):
-        epsilon = 3   # 逼近精度阈值，表示原始曲线与近似多边形之间的最大距离。值越小，近似结果越接近原始曲线。
+        epsilon = 3
         approx = cv2.approxPolyDP(contour, epsilon, True)
-        # 提取轮廓点
-        points = approx[:, 0, :]  # 去掉冗余维度
-        # 稀疏采样轮廓点（每隔 n 个点）
-        sample_rate = 1  # 可根据需要调整
+        points = approx[:, 0, :]
+        sample_rate = 1
         sampled_points = points[::sample_rate]
         contour_sampled_points.append(sampled_points.tolist())
-        # 将点添加到全局列表
         for point in sampled_points:
-            all_points.append(tuple(point))  # 转换为元组以便哈希
-            point_contour_id.append(idx)  # 记录点所属的轮廓ID
+            all_points.append(tuple(point))
+            point_contour_id.append(idx)
 
-    # 构建所有点之间的可见性图
     n = len(all_points)
-    visibility_matrix = np.zeros((n, n), dtype=bool)  # 初始化可见性矩阵
-    kernel_size = 2
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
-    # 预计算所有点对之间的可见性
-    for i in range(n):
-        for j in range(i + 1, n):  # 避免重复检查
-            p1, p2 = all_points[i], all_points[j]
-            line_img = np.zeros_like(map_info.map)
-            cv2.line(line_img, p1, p2, 127, 1)
-            dilated_line = cv2.dilate(line_img, kernel)
-            line_mask = dilated_line.astype(bool)
+    if n == 0:
+        return visible_graphs
+    
+    # 使用批量碰撞检测优化
+    pairs_i, pairs_j = np.triu_indices(n, k=1)
 
-            # 如果线段不穿过任何障碍物，则标记为可见
-            if not np.any(map_info.map[line_mask] == OCCUPIED) and \
-                check_collision(np.array(p1), np.array(p2), map_info, False) == False:
-                visibility_matrix[i, j] = True
-                visibility_matrix[j, i] = True  # 对称矩阵
-
-    assert np.array_equal(visibility_matrix, visibility_matrix.T), print(f"edge_error {np.array_equal(visibility_matrix, visibility_matrix.T)}")
+    if len(pairs_i) == 0:
+        return visible_graphs
+    
+    # 构建起点和终点数组
+    all_points_array = np.array(all_points, dtype=np.float64)
+    starts = all_points_array[pairs_i]
+    ends = all_points_array[pairs_j]
+    
+    # 批量碰撞检测（使用单元格坐标，不需要转换）
+    collision_results = _batch_collision_check(
+        starts, ends,
+        map_info.map,
+        0.0, 0.0,  # 单元格坐标，原点为0
+        1.0  # cell_size = 1
+    )
+    
+    # 构建可见性矩阵
+    visibility_matrix = np.zeros((n, n), dtype=bool)
+    for idx, (i, j) in enumerate(zip(pairs_i, pairs_j)):
+        if collision_results[idx] == 0:
+            visibility_matrix[i, j] = True
+            visibility_matrix[j, i] = True
 
     # 为每个轮廓构建可见图
     for idx in range(len(contours)):
-        # 获取当前轮廓的所有点索引
         contour_point_indices = [i for i, cid in enumerate(point_contour_id) if cid == idx]
         edges = []
 
-        # 检查当前轮廓的点与所有点（包括其他轮廓）的可见性
         for i in contour_point_indices:
             point_edges = []
             for j in range(len(all_points)):
-                if i == j:  # 跳过自身
-                    continue
-                if visibility_matrix[i, j]:
+                if i != j and visibility_matrix[i, j]:
                     point_edges.append(all_points[j])
             edges.append(point_edges)
+        
         visible_graphs.append({
             'object_id': idx,
             'contour_points': contour_sampled_points[idx],
@@ -690,43 +750,16 @@ def visualize_contours(grid_map, visible_graphs):
     plt.grid(True)
     plt.show()
 
-def get_nodes_in_range(updating_map_info, nodes_dict):
+def get_nodes_id_in_range(updating_map_info, nodes_tree):
     min_x = updating_map_info.map_origin_x + 2
     min_y = updating_map_info.map_origin_y + 2
     max_x = min_x + updating_map_info.cell_size * (updating_map_info.map.shape[1] ) - 2
     max_y = min_y + updating_map_info.cell_size * (updating_map_info.map.shape[0] ) - 2
+    bb = (min_x,
+          min_y,
+          max_x,
+          max_y)
+    result_ids = list(nodes_tree.intersection(bb))
+    return [nid for nid in result_ids]
 
-    # bb = quads.BoundingBox(min_x=center_x - UPDATING_MAP_SIZE // 2 + 2,
-    #                        min_y=center_y - UPDATING_MAP_SIZE // 2 + 2,
-    #                        max_x=center_x + UPDATING_MAP_SIZE // 2 - 2,
-    #                        max_y=center_y + UPDATING_MAP_SIZE // 2 - 2)
-    bb = quads.BoundingBox(min_x,
-                           min_y,
-                           max_x,
-                           max_y)
-    points_in_range = nodes_dict.within_bb(bb)
-    return points_in_range
-
-if __name__ =="__main__":
-    # 创建房间示例地图 (100x100)
-    grid_map = np.full((100, 100), 255, dtype=np.uint8)  # 默认可通行
-
-    # 创建房间墙壁 (外部矩形)
-    grid_map[10:90, 10:15] = 1  # 左墙
-    grid_map[10:90, 85:90] = 1  # 右墙
-    grid_map[10:15, 10:90] = 1  # 上墙
-
-    # 添加内部障碍物（桌子）
-    grid_map[30:60, 30:35] = 1
-    grid_map[30:60, 45:50] = 1
-    grid_map[30:35, 30:50] = 1
-
-    # 添加未知区域
-    grid_map[70:75, 70:85] = 127
-    map_info = MapInfo(grid_map,0,0,0)
-    map_info = np.load(r"E:\A研究生\code\carla_code\VITR\data.npy", allow_pickle=True)
-    visible_graphs = extract_visible_graph_from_map(map_info)
-
-    # 可视化
-    visualize_contours(grid_map, visible_graphs)
 

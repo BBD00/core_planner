@@ -30,15 +30,17 @@ MOVE_DISTANCE = 5   # meter
 END_MIN_DISTANCE = 2 # meter判断结束的距离
 
 # updating map range w.r.t the robot
-UPDATING_MAP_SIZE = 4 * SENSOR_RANGE + 4 * NODE_RESOLUTION  # nodes outside this range will not be affected by current measurements 80
+UPDATING_MAP_SIZE = 2 * SENSOR_RANGE + 4 * NODE_RESOLUTION  # nodes outside this range will not be affected by current measurements 80
 
 # 地图可视点更新容忍值
 TOLERANCE = 0.1
+UPDATE_THRESHOLD = 5
 
 # 车辆停滞惩罚阈值
 STAGNATION_THRESHOLD = 3
 STAY_DIS_THRESHOLD = 3
 STAY_WINDOW_SIZE = 20
+NOISE_THRESHOLD = 1
 
 # 边界聚类最小值
 MIN_CLUSTER_NUM = 7

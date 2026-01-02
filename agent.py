@@ -43,12 +43,6 @@ class Agent:
         self.node_coords, self.utility, self.guidepost, self.goal_distance, self.stay_count = None, None, None, None, None
         self.current_index, self.adjacent_matrix, self.neighbor_indices = None, None, None
 
-        # self.travel_dist = 0
-        #
-        # self.episode_buffer = []
-        # for i in range(15):
-        #     self.episode_buffer.append([])
-        #
         self.trajectory_x = []
         self.trajectory_y = []
 
@@ -154,6 +148,7 @@ class Agent:
                                        self.map_info)
         self.node_coords, self.utility, self.goal_distance, self.stay_count, self.adjacent_matrix, self.current_index, self.neighbor_indices = \
             self.update_observation()
+        
 
     def update_observation(self):
         """
@@ -169,8 +164,10 @@ class Agent:
         """
         # 收集所有节点的坐标
         all_node_coords = []
-        for node in self.node_manager.nodes_dict.__iter__():    # 遍历四叉树中的所有节点
-            all_node_coords.append(node.data.coords)            # 收集节点坐标
+        all_node_ids = []
+        for id, node in self.node_manager.id_to_node.items():   # 遍历四叉树中的所有节点
+            all_node_coords.append(node.coords)                 # 收集节点坐标
+            all_node_ids.append(id)                              # 收集节点ID
         all_node_coords = np.array(all_node_coords).reshape(-1, 2)  # 转换为numpy数组
         utility = []
         # guidepost = [] # 即是否visited
@@ -183,24 +180,18 @@ class Agent:
         node_coords_to_check = all_node_coords[:, 0] + all_node_coords[:, 1] * 1j
         # 构建邻接矩阵和收集效用值
         for i, coords in enumerate(all_node_coords):        # 遍历所有节点坐标
-            node = self.node_manager.nodes_dict.find((coords[0], coords[1])).data     # 获取节点
+            node = self.node_manager.id_to_node.get(all_node_ids[i])  # 获取节点
             utility.append(node.utility)                    # 收集节点效用值
-            # guidepost.append(node.visited)
             distance.append(np.linalg.norm(node.coords - self.goal_point))
             stay_count.append(get_stay_count(node.coords, self.trajectory_x, self.trajectory_y))
-            for neighbor in node.neighbor_edges_set:              # 遍历节点的邻居
+            for id, neighbor_coords in node.neighbor_coords_dist.items():              # 遍历节点的邻居
                 # 在所有节点中查找邻居索引
-                index = np.argwhere(node_coords_to_check == neighbor[0] + neighbor[1] * 1j)     # 返回二维数组  # [[1] [3]]
-                # assert index is not None
-                # index = index[0][0]
-                # adjacent_matrix[i, index] = 0
-                # if index or index == [[0]]:  # 如果找到邻居 单独处理[[0]]因为这个会被视为False
+                index = np.argwhere(node_coords_to_check == neighbor_coords[0] + neighbor_coords[1] * 1j)     # 返回二维数组  # [[1] [3]]
                 if index.size > 0:  # TODO 这里貌似会有相同的点出现，应该是fronter的时候产生了相同的点
                     index = index[0][0]  # 获取索引值
                     adjacent_matrix[i, index] = 0  # 在邻接矩阵中标记连接关系（0表示连接）
 
         utility = np.array(utility)     # 转换效用值为numpy数组
-        # guidepost = np.array(guidepost) # 转换guidepost为numpy数组
         distance = np.array(distance)
         stay_count = np.array(stay_count)
         # 获取对应的节点索引
@@ -229,20 +220,25 @@ class Agent:
         node_stay_count = self.stay_count.reshape(-1, 1)# 所有节点的停滞标记(最大为6即停滞了6次)
         current_index = self.current_index              # 当前节点索引
         edge_mask = self.adjacent_matrix                # 邻接矩阵（有邻居为0）
-        current_edge = self.neighbor_indices            # 当前节点的邻居（包含自己）（有邻居为0） n*1
+        current_edge = self.neighbor_indices            # 当前节点的邻居索引（不包含自己） n*1
         n_node = node_coords.shape[0]                   # 节点数量
         # 计算相对于当前节点的坐标，并进行归一化
         current_node_coords = node_coords[self.current_index]
-        # 变成N*2  /96（m）/2
-        node_coords = np.concatenate((node_coords[:, 0].reshape(-1, 1) - current_node_coords[0],
+        # 变成N*2 
+        relative_coords = np.concatenate((node_coords[:, 0].reshape(-1, 1) - current_node_coords[0],
                                             node_coords[:, 1].reshape(-1, 1) - current_node_coords[1]),
-                                           axis=-1) / UPDATING_MAP_SIZE
+                                           axis=-1)
+        max_abs_coord = np.max(np.abs(relative_coords))
+        if max_abs_coord > 1e-6:  # 避免除以零
+            node_coords = relative_coords / max_abs_coord
+        else:
+            node_coords = relative_coords  # 如果所有坐标都是0，保持不变
         # 归一化效用值 20*3.14 // 1.6 =39
         node_utility = node_utility / (SENSOR_RANGE * 3.14 // FRONTIER_CELL_SIZE)
         # 合并节点特征
         node_inputs = np.concatenate((node_coords, node_utility, node_goal_distance, node_stay_count), axis=1)
         node_inputs = torch.FloatTensor(node_inputs).unsqueeze(0).to(self.device)
-        # 填充节点特征到固定大小  360
+        # 填充节点数量到固定大小  360个元素
         assert node_coords.shape[0] < NODE_PADDING_SIZE, print(node_coords.shape[0], NODE_PADDING_SIZE)
         padding = torch.nn.ZeroPad2d((0, 0, 0, NODE_PADDING_SIZE - n_node))
         node_inputs = padding(node_inputs)
@@ -259,7 +255,7 @@ class Agent:
         padding = torch.nn.ConstantPad2d(
             (0, NODE_PADDING_SIZE - n_node, 0, NODE_PADDING_SIZE - n_node), 1)
         edge_mask = padding(edge_mask)
-        # 处理当前边缘信息
+        # 处理当前边缘信息 填充的为0
         # 获取当前节点在自身的邻居列表中的索引  [0][0]返回一个数字  这里修改了与初始不一样，现在不会有自己的index在里面
         # current_in_edge = np.argwhere(current_edge == self.current_index)[0][0]
         current_edge = torch.tensor(current_edge).unsqueeze(0)
@@ -272,7 +268,7 @@ class Agent:
         # edge_padding_mask[0, 0, current_in_edge] = 1
         padding = torch.nn.ConstantPad1d((0, K_SIZE - k_size), 1)
         # 最终返回tensor([[[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,1, 1]]])
-        # 其中0代表邻居，前面的1是自己，后面的是填充的
+        # 其中0代表邻居，后面的是填充的1
         edge_padding_mask = padding(edge_padding_mask)
 
         return [node_inputs, node_padding_mask, edge_mask, current_index, current_edge, edge_padding_mask]
@@ -315,99 +311,68 @@ class Agent:
 
 
     def select_next_waypoint(self, observation):
-        _, _, _, _, current_edge, _ = observation
+        _, _, _, _, current_edge, edge_padding_mask = observation
+
+        # 检查当前节点是否有有效的邻居边
+        valid_edge_count = torch.sum(edge_padding_mask == 0).item()
+
+        if valid_edge_count == 0:
+            # 当前节点没有边，直接朝终点移动
+            print(f"Error: Robot Node {self.location} has no valid edges, moving directly to goal {self.goal_point}")
+            logger.warning(f"Robot Node {self.location} has no valid edges, moving directly to goal {self.goal_point}")
+
+            direction = self.goal_point - self.location
+            dist = np.linalg.norm(direction)
+            if dist > 0:
+                step_size = min(MOVE_DISTANCE, dist)
+                next_position = self.location + (direction / dist) * step_size
+                next_position = np.round(next_position, 1)
+            else:
+                next_position = self.goal_point
+            
+            return next_position, torch.tensor([self.node_manager.goal_id])
+        
         with torch.no_grad():
             logp = self.policy_net(*observation)
-        # TODO 修改代码，这里会有pytorch BUG尽管都是-1e8还是会采样到因此只采用有概率的元素进行采样
-        # valid_mask = logp > -1e7  # 新增
-        # safe_logp = logp.masked_fill(~valid_mask, -float('inf'))    # 新增
-        # probs = safe_logp.softmax(dim=-1)  # 新增
-        # # action_index = torch.multinomial(logp.exp(), 1).long().squeeze(1)
-        # action_index = torch.multinomial(probs, 1).long().squeeze(1)
-        # next_node_index = current_edge[0, action_index.item(), 0].item()
-        # next_position = self.node_coords[next_node_index]
-        # 新方法
+        # 只在有效边范围内获取有效动作的索引
+        # logp 形状: (1, K_SIZE)，只检查前 valid_edge_count 个
+        valid_logp_range = logp[0, :valid_edge_count]
+        valid_mask = valid_logp_range > -1e7
+        valid_indices = torch.where(valid_mask)[0]
+        
         # 获取有效动作的索引
-        try:
-            valid_indices = torch.where(logp > -1e7)[1]
-            if len(valid_indices) == 0:
-                print(f"very error {logp}")
-                logger.error(f"very error!!!{logp}")
-                edge_num = torch.sum(current_edge > 0)
-                valid_indices = torch.tensor(torch.arange(edge_num), device=logp.device)
-                logp = torch.ones(1,edge_num)
+        # valid_indices = torch.where(logp > -1e7)[1]
+        if len(valid_indices) == 0:
+            print(f"Error: All action probabilities are invalid {logp}, trying to use valid edges")
+            logger.warning(f"All action probabilities are invalid, trying to use valid edges")
+            valid_indices = torch.arange(valid_edge_count, device=logp.device)
+            valid_probs = torch.ones(valid_edge_count, device=logp.device) / valid_edge_count
+        else:
             # 只计算有效动作的概率
             valid_logp = logp[:, valid_indices]
             valid_probs = valid_logp.softmax(dim=-1)
-            # 从有效动作中采样
-            sampled_idx = torch.multinomial(valid_probs, 1).long().squeeze(1)
-            action_index = valid_indices[sampled_idx]
-            next_node_index = current_edge[0, action_index.item(), 0].item()
-            next_position = self.node_coords[next_node_index]
-        except:
-            # 保存为Pickle文件
-            error_info = {
-                "current_location": self.location,
-                "logp": logp,
-                "current_edge": current_edge,
-                "observation": observation,
-                "node_coords": self.node_coords,
-                "policy_net_state": self.policy_net.state_dict(),
-                "timestamp": datetime.datetime.now(),
-                "map_info": self.map_info,
-                "updating_map_info": self.updating_map_info,
-            }
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"assert_error_pro_{timestamp}.pkl"
-            with open(filename, 'wb') as f:
-                pickle.dump(error_info, f)
 
-        # 调试信息准备
-        node = self.node_manager.nodes_dict.find((self.location[0], self.location[1]))
-        check = np.array(list(node.data.neighbor_edges_set)).reshape(-1, 2)
-        # 检查条件
-        next_pos_complex = next_position[0] + next_position[1] * 1j
-        check_complex = check[:, 0] + check[:, 1] * 1j
-        # while next_pos_complex in check_complex:
-        condition = next_pos_complex in check_complex
+        # 获取有效邻居的节点索引
+        valid_node_indices = current_edge[0, valid_indices, 0].cpu().numpy().flatten()
         
-        # 当断言失败时保存详细信息
-        if not condition:
-            # 准备错误信息
-            error_info = {
-                "next_position": next_position,
-                "current_location": self.location,
-                "neighbor_edges_set": node.data.neighbor_edges_set,
-                "logp": logp,
-                "action_index": action_index,
-                "current_edge": current_edge,
-                "observation": observation,
-                "node_coords": self.node_coords,
-                "policy_net_state": self.policy_net.state_dict(),
-                "timestamp": datetime.datetime.now(),
-                "map_info": self.map_info,
-                "updating_map_info": self.updating_map_info,
-            }
-            
-            # 保存为Pickle文件
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"assert_error_{timestamp}.pkl"
-            with open(filename, 'wb') as f:
-                pickle.dump(error_info, f)
-            
-            # 打印提示信息
-            print(f"Assertion failed! Full debug info saved to {filename}")
-            logger.warning(f"Assertion failed! Full debug info saved to {filename}")
+        # 保存动作概率和对应的节点坐标用于可视化
+        self.action_probs = valid_probs.cpu().numpy().flatten()
+        # 保存节点坐标而不是索引，避免索引失效问题
+        self.action_node_coords = self.node_coords[valid_node_indices].copy()
         
-        # 原始断言
-        assert condition, print(next_position, self.location, node.data.neighbor_edges_set, logp)
-
-
+        # 从有效动作中采样
+        # sampled_idx = torch.multinomial(valid_probs, 1).long().squeeze(1)
+        sampled_idx = torch.argmax(valid_probs ,dim=1).long()
+        action_index = valid_indices[sampled_idx]
+        next_node_index = current_edge[0, action_index.item(), 0].item()
+        next_position = self.node_coords[next_node_index]
+        
         return next_position, action_index
 
     def plot_env(self):
-        plt.switch_backend('agg')
-
+        # plt.switch_backend('Tkagg')
+        # plt.ion()  # 开启交互模式
+        # plt.figure(figsize=(10, 8))
         plt.figure(figsize=(18, 5))
         plt.subplot(1, 3, 2)
         nodes = get_cell_position_from_coords(self.node_coords, self.map_info)
@@ -419,18 +384,13 @@ class Agent:
         plt.imshow(self.map_info.map, cmap='gray')
         plt.axis('off')
         plt.scatter(nodes[:, 0], nodes[:, 1], c=self.utility, zorder=2)
-        count = 0
-        for node, utility, stay_count in zip(nodes, self.utility, self.stay_count):
-            # plt.text(node[0], node[1], str(utility), zorder=3)
-            # plt.text(node[0],node[1],f"({node[0]},{node[1]}){utility}",  fontsize=5, zorder=3)
-            # plt.text(node[0],node[1], f"({self.node_coords[count][0]},{self.node_coords[count][1]}){utility}", fontsize=5, zorder=3)
-            plt.text(node[0],node[1], f"({stay_count}){utility}", fontsize=5, zorder=3)
-            count += 1
+        for i, (node, utility, stay_count) in enumerate(zip(nodes, self.utility, self.stay_count)):
+            plt.text(node[0], node[1], f"({self.node_coords[i][0]},{self.node_coords[i][1]}){stay_count}", fontsize=5, zorder=3)
         plt.plot(robot[0], robot[1], 'mo', markersize=16, zorder=5)
         plt.plot(goal_cell[0], goal_cell[1], 'ro', markersize=10, zorder=5)
         for coords in self.node_coords:
-            node = self.node_manager.nodes_dict.find(coords.tolist()).data
-            for neighbor_coords in node.neighbor_edges_set:
+            node = self.node_manager.get_node(coords.tolist())
+            for neighbor_coords in node.get_neighbor_coords():
                 end = (np.array(neighbor_coords) - coords) / 2 + coords
                 plt.plot((np.array([coords[0], end[0]]) - self.map_info.map_origin_x) / self.cell_size,
                                (np.array([coords[1], end[1]]) - self.map_info.map_origin_y) / self.cell_size, 'tan', zorder=1)
@@ -441,11 +401,59 @@ class Agent:
         plt.scatter(nodes[:, 0], nodes[:, 1], c=self.utility, zorder=2)
         plt.plot(robot[0], robot[1], 'mo', markersize=4, zorder=5)
         plt.plot(goal_cell[0], goal_cell[1], 'ro', markersize=4, zorder=5)
-        node = self.node_manager.nodes_dict.find(self.location.tolist()).data
-        for neighbor_coords in node.neighbor_edges_set:
+        node = self.node_manager.get_node(self.location.tolist())
+        for neighbor_coords in node.get_neighbor_coords():
             end = (np.array(neighbor_coords) - self.location) + self.location
             plt.plot((np.array([self.location[0], end[0]]) - self.map_info.map_origin_x) / self.cell_size,
                      (np.array([self.location[1], end[1]]) - self.map_info.map_origin_y) / self.cell_size, 'tan', zorder=1)
+        # 绘制邻居边，根据动作概率着色
+        if hasattr(self, 'action_probs') and self.action_probs is not None and hasattr(self, 'action_node_coords') and self.action_node_coords is not None:
+            # 创建颜色映射：概率越高颜色越深（使用红色渐变）
+            cmap = plt.cm.Reds
+            
+            # 构建动作坐标到概率的映射
+            coord_to_prob = {}
+            for i, coord in enumerate(self.action_node_coords):
+                coord_key = (round(coord[0], 1), round(coord[1], 1))
+                coord_to_prob[coord_key] = self.action_probs[i]
+            
+            for neighbor_coords in node.get_neighbor_coords():
+                end = np.array(neighbor_coords)
+                start = self.location
+                neighbor_key = (round(neighbor_coords[0], 1), round(neighbor_coords[1], 1))
+                
+                if neighbor_key in coord_to_prob:
+                    prob = coord_to_prob[neighbor_key]
+                    # 根据概率设置颜色（0.3-1.0范围，避免颜色太浅）
+                    color = cmap(0.3 + 0.7 * prob)
+                    linewidth = 1 + 3 * prob  # 概率越高线越粗
+                else:
+                    color = 'lightgray'
+                    linewidth = 1
+                    prob = None
+                
+                # 绘制边
+                plt.plot(
+                    (np.array([start[0], end[0]]) - self.map_info.map_origin_x) / self.cell_size,
+                    (np.array([start[1], end[1]]) - self.map_info.map_origin_y) / self.cell_size,
+                    color=color, linewidth=linewidth, zorder=4
+                )
+            
+            # 在邻居节点上标注概率值
+            for i, coord in enumerate(self.action_node_coords):
+                neighbor_cell = get_cell_position_from_coords(coord, self.map_info)
+                prob = self.action_probs[i]
+                # 根据概率设置节点颜色
+                color = cmap(0.3 + 0.7 * prob)
+                plt.scatter(neighbor_cell[0], neighbor_cell[1], c=[color], s=50, edgecolors='black', zorder=6)
+                plt.text(neighbor_cell[0] + 2, neighbor_cell[1] + 2, f'{prob:.2f}', fontsize=8, color='blue', zorder=7)
+        else:
+            # 如果没有动作概率，使用默认颜色绘制
+            if node is not None:
+                for neighbor_coords in node.get_neighbor_coords():
+                    end = np.array(neighbor_coords)
+                    plt.plot((np.array([self.location[0], end[0]]) - self.map_info.map_origin_x) / self.cell_size,
+                             (np.array([self.location[1], end[1]]) - self.map_info.map_origin_y) / self.cell_size, 'tan', zorder=1)
 
         # 计算当前节点位置（转换为图像坐标）
         current_node_x = (self.location[0] - self.map_info.map_origin_x) / self.cell_size
@@ -457,6 +465,7 @@ class Agent:
                              rect_size, rect_size,
                              linewidth=2, edgecolor='cyan', facecolor='none', zorder=6)
         plt.gca().add_patch(rect)
-        # plt.show()
+
+        # plt.show(block=False)  # 或使用这个
 
 
