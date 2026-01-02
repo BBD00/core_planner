@@ -73,7 +73,7 @@ class Env:
         else:
             ground_truth = ground_truth.astype(int)
         # 使用block_reduce进行2x2的降采样(取最小值) 最小池化
-        # ground_truth = block_reduce(ground_truth, 2, np.min)
+        ground_truth = block_reduce(ground_truth, 2, np.min)
         # 找到标记为208的像素点作为机器人初始位置
         robot_cell = np.nonzero(ground_truth == 208)
         # 这里交换是因为np.nonzero返回的是（行、列）索引，而x是列索引，y是行索引

@@ -3,11 +3,11 @@ FOLDER_NAME = 'core'
 model_path = f'model/{FOLDER_NAME}'
 train_path = f'train/{FOLDER_NAME}'
 gifs_path = f'gifs/{FOLDER_NAME}'
-map_path = f'/data/kjt_data/code/ARiADNE/maps'
+map_path = f'/data/kjt_data/code/DARE/maps_train'  #/data/kjt_data/code/DARE/maps_train
 
 # save training data
 SUMMARY_WINDOW = 32  # how many training steps before writing data to tensorboard
-LOAD_MODEL = False  # do you want to load the model trained before
+LOAD_MODEL = True  # do you want to load the model trained before
 SAVE_IMG_GAP = 100  # how many episodes before saving a gif
 
 # map and planning resolution
