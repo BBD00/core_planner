@@ -106,7 +106,6 @@ class Worker:
         self.perf_metrics['travel_dist'] = self.env.travel_dist
         self.perf_metrics['explored_rate'] = self.env.explored_rate
         self.perf_metrics['success_rate'] = done
-        print("average step time:", np.mean(np.array(self.robot.times)))
         # save gif
         if self.save_image:
             make_gif(gifs_path, self.global_step, self.env.frame_files, self.env.explored_rate, done)

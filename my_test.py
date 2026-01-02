@@ -12,13 +12,13 @@ import torch
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
-torch.manual_seed(SEED)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed(SEED)
-    torch.cuda.manual_seed_all(SEED)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.enabled = False
+# torch.manual_seed(SEED)
+# if torch.cuda.is_available():
+#     torch.cuda.manual_seed(SEED)
+#     torch.cuda.manual_seed_all(SEED)
+#     torch.backends.cudnn.deterministic = True
+#     torch.backends.cudnn.benchmark = False
+#     torch.backends.cudnn.enabled = False
 # 配置日志（只需执行一次）
 logger.add("log/app.log", rotation="10 MB")
 logger.debug("this is debug beginng")
@@ -28,7 +28,7 @@ matplotlib.use('TkAgg')  # 指定 TkAgg 后端
 local_network = PolicyNet(NODE_INPUT_DIM, EMBEDDING_DIM)
 model_file = r"/home/iair/kjt_workspace/cmu_ws/core/src/core_ros_planner/scripts/model/checkpoint14_5w5.pth"
 local_network.load_state_dict(torch.load(model_file, map_location="cpu")['policy_model'])
-worker = Worker(1, local_network, 1, save_image=True)
+worker = Worker(1, local_network, 2, save_image=True)
 worker.run_episode()
 # node_inputs = torch.stack(rollouts[0]).to(device)
 # node_padding_mask = torch.stack(rollouts[1]).to(device)

@@ -2,13 +2,17 @@ import numpy as np
 import imageio
 import os
 from skimage.morphology import label
-from numba import jit, njit  # 新增导入
-import quads
+from numba import jit, njit
 from parameter import *
 import matplotlib.pyplot as plt
 import cv2
 from itertools import combinations
 from collections import deque
+
+# ROS 接口
+_FREE = FREE  # 0
+_OCCUPIED = OCCUPIED  # 100
+_UNKNOWN = UNKNOWN  # parameter.UNKNOWN 
 
 
 def get_cell_position_from_coords(coords, map_info, check_negative=True):
@@ -91,7 +95,7 @@ def _find_frontier_indices(map_data, unknown_neighbor):
     indices = []
     for y in range(y_len):
         for x in range(x_len):
-            if map_data[y, x] == 255:  # FREE
+            if map_data[y, x] == _FREE:  # FREE
                 neighbor_count = unknown_neighbor[y, x]
                 if 1 < neighbor_count < 8:
                     indices.append(x * y_len + y)  # 列优先索引
@@ -140,7 +144,7 @@ def get_stay_count(current_position, past_trajectory_x, past_trajectory_y, windo
     """
     # 确保有足够的历史轨迹点
     if len(past_trajectory_x) < window_size:
-        return 0
+        window_size = len(past_trajectory_x)
     # 获取最近的window_size个历史位置
     # recent_x = past_trajectory_x[-window_size:]
     # recent_y = past_trajectory_y[-window_size:]
@@ -392,10 +396,10 @@ def _bresenham_collision_check(x0, y0, x1, y1, map_data, map_height, map_width):
         k = map_data[int(y), int(x)]
         if x == x1 and y == y1:
             break
-        if k == 1:  # OCCUPIED
-            return 1
-        if k == 127:  # UNKNOWN
-            return 127
+        if k == _OCCUPIED:  # OCCUPIED
+            return _OCCUPIED
+        if k == _UNKNOWN:  # UNKNOWN
+            return _UNKNOWN
         if error > 0:
             x += x_inc
             error -= dy
@@ -469,7 +473,7 @@ def check_collision(start, end, map_info, do_trans=True):
     
     # 如果两点都在地图外，直接返回未知
     if not start_in_map and not end_in_map:
-        return UNKNOWN
+        return _UNKNOWN
     
     # 边界裁剪
     if not start_in_map:
@@ -486,10 +490,10 @@ def check_collision(start, end, map_info, do_trans=True):
     # 转换返回值
     if result == 0:
         return False
-    elif result == 1:
-        return OCCUPIED
+    elif result == _OCCUPIED:
+        return _OCCUPIED
     else:
-        return UNKNOWN
+        return _UNKNOWN
 
 @njit(cache=True, parallel=True)
 def _batch_collision_check(starts, ends, map_data, origin_x, origin_y, cell_size):
@@ -522,7 +526,7 @@ def _batch_collision_check(starts, ends, map_data, origin_x, origin_y, cell_size
         end_in = 0 <= x1 < map_width and 0 <= y1 < map_height
         
         if not start_in and not end_in:
-            results[i] = 127
+            results[i] = _UNKNOWN
             continue
         
         # 边界裁剪
@@ -548,11 +552,11 @@ def _batch_collision_check(starts, ends, map_data, origin_x, origin_y, cell_size
             k = map_data[y, x]
             if x == x1 and y == y1:
                 break
-            if k == 1:
-                collision = 1
+            if k == _OCCUPIED:
+                collision = _OCCUPIED
                 break
-            if k == 127:
-                collision = 127
+            if k == _UNKNOWN:
+                collision = _UNKNOWN
                 break
             if error > 0:
                 x += x_inc
@@ -648,7 +652,7 @@ def extract_visible_graph_from_map(map_info):
         每个障碍物的可见图（轮廓点 + 无碰撞边）
     """
     # 1. 创建二值障碍物掩码（障碍物=1，其他=0）
-    obstacle_mask = np.where(map_info.map == 1, 1, 0).astype(np.uint8)
+    obstacle_mask = np.where(map_info.map == _OCCUPIED, 1, 0).astype(np.uint8)
     kernel = np.ones((3, 3), np.uint8)
     processed_mask = cv2.dilate(obstacle_mask, kernel, iterations=3)
     binary_map = np.uint8((processed_mask == 1) * 255)
