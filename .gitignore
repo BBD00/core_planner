@@ -1,14 +1,12 @@
-logs/
 model/
 train/
 log/
-gifs/
+gifs/core/
 *.pt
 *.csv
 *.pth
 *.log
 *.pkl
-*.gif
 *.pyc
 __pycache__/
 utils_test.py
