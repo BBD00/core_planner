@@ -3,11 +3,11 @@ FOLDER_NAME = 'core'
 model_path = f'model/{FOLDER_NAME}'
 train_path = f'train/{FOLDER_NAME}'
 gifs_path = f'gifs/{FOLDER_NAME}'
-map_path = f'/data/kjt_data/code/DARE/maps_train'  #/data/kjt_data/code/DARE/maps_train
+map_path = f'/data/kjt_data/code/vitr/maps'  #/data/kjt_data/code/DARE/maps_train
 
 # save training data
 SUMMARY_WINDOW = 32  # how many training steps before writing data to tensorboard
-LOAD_MODEL = True  # do you want to load the model trained before
+LOAD_MODEL = False  # do you want to load the model trained before
 SAVE_IMG_GAP = 100  # how many episodes before saving a gif
 
 # map and planning resolution
@@ -53,7 +53,7 @@ MINIMUM_BUFFER_SIZE = 2000
 BATCH_SIZE = 256
 LR = 2e-5
 GAMMA = 1
-NUM_META_AGENT = 32  # how many threads does your CPU have 16
+NUM_META_AGENT = 24  # how many threads does your CPU have 16
 
 # network parameters
 NODE_INPUT_DIM = 5
@@ -67,4 +67,7 @@ NODE_PADDING_SIZE = 360  # the number of nodes will be padded to this value, nee
 USE_GPU = False  # do you want to collect training data using GPUs (better not)
 USE_GPU_GLOBAL = True  # do you want to train the network using GPUs
 NUM_GPU = 0  # 0 unless you want to collect data using GPUs
+
+IS_DEBUG = True
+IS_TRAIN = True
 

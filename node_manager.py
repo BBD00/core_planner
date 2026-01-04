@@ -120,14 +120,15 @@ class NodeManager:
         # 非机器人节点检查是否已存在
         existing = self.check_node_exist_in_dict(coords)
         if existing is not None:
-            print("节点已存在，error")
+            # print("节点已存在，error")
+            logger.info("Node already exists, skip adding.")
             return existing
         if is_goal:
             if self.goal_id is None:
                 self.id_tracker += 1
                 self.goal_id = self.id_tracker
             node = LocalNode(self.goal_id, coords, frontiers, edges_coords, updating_map_info)
-            print("Goal node added:", self.goal_id, coords)
+            # print("Goal node added:", self.goal_id, coords)
             self.id_to_node[self.goal_id] = node
             self.nodes_tree.insert(self.goal_id, bounds)
         elif is_frontier:
@@ -170,15 +171,24 @@ class NodeManager:
         参数:
         node: 要移除的节点
         """
+        if node is None:
+            return
+        node_id = node.id
+        neighbor_ids_copy = list(node.neighbor_ids)
+
         # 先删除邻居节点中的连接
-        for neighbor_id in list(node.neighbor_ids):
+        for neighbor_id in neighbor_ids_copy:
             neighbor_node = self.id_to_node.get(neighbor_id)
             if neighbor_node:
-                neighbor_node.remove_neighbor_by_id(node.id)
+                neighbor_node.remove_neighbor_by_id(node_id)
+        # 清空当前节点的邻居关系
+        node.neighbor_ids.clear()
+        node.neighbor_coords_dist.clear()
+
         # 从 R-tree 和字典中删除
         bounds = self._make_bounds(node.coords)
-        self.nodes_tree.delete(node.id, bounds)
-        self.id_to_node.pop(node.id, None)
+        self.nodes_tree.delete(node_id, bounds)
+        self.id_to_node.pop(node_id, None)
 
     def within_bb(self, min_x, min_y, max_x, max_y):
         """范围查询，返回节点列表"""
@@ -220,7 +230,6 @@ class NodeManager:
         current_step = self._update_counter
 
         for node in nodes_in_range:
-            # 跳过特殊节点
             if node.id == self.robot_id or node.id == self.goal_id:
                 continue
             if self.goal_point is not None and np.allclose(node.coords, self.goal_point, atol=0.2):
@@ -274,12 +283,20 @@ class NodeManager:
         """
         更新传入节点的邻居边
         """
+        if node is None:
+            return
         node_id_to_remove = []
         # 检查现在的邻居边是否还存在
-        for neighbor_id in node.neighbor_ids:
-            if neighbor_id not in self.id_to_node:
-                print("NM: error the neighbor_id is not in dist", neighbor_id, node.neighbor_coords_dist[neighbor_id])
+        for neighbor_id in list(node.neighbor_ids):  # 使用 list() 创建副本
+            neighbor_node = self.id_to_node.get(neighbor_id)
+            if neighbor_node is None:
+                logger.debug(f"NM: neighbor_id {neighbor_id} not in dict, removing from node {node.id}")
                 node_id_to_remove.append(neighbor_id)
+            else:
+                # 检查对方是否也有到本节点的连接，如果没有则需要修复
+                if node.id not in neighbor_node.neighbor_ids:
+                    # 修复：添加双向连接
+                    neighbor_node.add_neighbor(node.id, node.coords)
         for neighbor_id in node_id_to_remove:
             node.neighbor_ids.discard(neighbor_id)
             node.neighbor_coords_dist.pop(neighbor_id, None)
@@ -455,7 +472,66 @@ class NodeManager:
                     UPDATING_MAP_SIZE / 2):
                 self.init_node_neighbors(node, updating_map_info)
 
+        # 在更新结束后修复可能的断边问题
+        if IS_DEBUG:
+            self.repair_broken_edges()
 
+    def validate_graph_integrity(self):
+        """
+        验证图的完整性，确保所有边都是双向的
+        用于调试，可以在 update_graph 结束时调用
+        """
+        errors = []
+        for node_id, node in self.id_to_node.items():
+            for neighbor_id in list(node.neighbor_ids):
+                neighbor_node = self.id_to_node.get(neighbor_id)
+                if neighbor_node is None:
+                    errors.append(f"Node {node_id} has neighbor {neighbor_id} which doesn't exist")
+                    # 自动修复：移除不存在的邻居
+                    node.neighbor_ids.discard(neighbor_id)
+                    node.neighbor_coords_dist.pop(neighbor_id, None)
+                elif node_id not in neighbor_node.neighbor_ids:
+                    errors.append(f"Node {node_id} -> {neighbor_id} but {neighbor_id} -> {node_id} missing")
+                    # 自动修复：添加反向连接
+                    neighbor_node.add_neighbor(node_id, node.coords)
+        
+        if errors:
+            for err in errors:
+                logger.warning(f"Graph integrity issue: {err}")
+        return len(errors) == 0
+
+    def repair_broken_edges(self):
+        """
+        修复所有断开的边，确保双向连接
+        """
+        repaired_count = 0
+        removed_count = 0
+        
+        for node_id, node in list(self.id_to_node.items()):
+            neighbors_to_remove = []
+            
+            for neighbor_id in list(node.neighbor_ids):
+                neighbor_node = self.id_to_node.get(neighbor_id)
+                
+                if neighbor_node is None:
+                    # 邻居节点不存在，需要移除这条边
+                    neighbors_to_remove.append(neighbor_id)
+                    removed_count += 1
+                elif node_id not in neighbor_node.neighbor_ids:
+                    # 双向连接缺失，添加反向连接
+                    neighbor_node.add_neighbor(node_id, node.coords)
+                    repaired_count += 1
+            
+            # 移除指向不存在节点的边
+            for neighbor_id in neighbors_to_remove:
+                node.neighbor_ids.discard(neighbor_id)
+                node.neighbor_coords_dist.pop(neighbor_id, None)
+        
+        if repaired_count > 0 or removed_count > 0:
+            print(f"Graph repair: added {repaired_count} missing edges, removed {removed_count} broken edges")
+            logger.info(f"Graph repair: added {repaired_count} missing edges, removed {removed_count} broken edges")
+        
+        return repaired_count, removed_count
 class LocalNode:
     def __init__(self, id, coords, frontiers, edge_coords, updating_map_info):
         """

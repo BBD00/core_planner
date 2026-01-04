@@ -15,7 +15,7 @@ os.environ["LOG_FILE_PATH"] = f"app.log"
 from log_config import logger
 sys.setrecursionlimit(10000)
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5,6" 
+os.environ["CUDA_VISIBLE_DEVICES"] = "5,6" 
 
 # 直接使用logger
 logger.info("Welcome to RL autonomous exploration!")
@@ -130,8 +130,14 @@ def main():
             # save experience and metric
             for job in done_jobs:
                 job_results, metrics, info = job
-                for i in range(len(experience_buffer)):
-                    experience_buffer[i] += job_results[i]
+                if len(job_results[0]) > 0:
+                    buffer_lengths = [len(buf) for buf in job_results]
+                    if len(set(buffer_lengths)) == 1:  # 所有buffer长度相同
+                        for i in range(len(experience_buffer)):
+                            experience_buffer[i] += job_results[i]
+                    else:
+                        logger.warning(f"Inconsistent buffer lengths: {buffer_lengths}, skipping this job")
+                        
                 for n in metric_name:
                     perf_metrics[n].append(metrics[n])
 

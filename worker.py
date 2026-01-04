@@ -1,4 +1,5 @@
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg') 
 import torch
 
 from env import Env
@@ -67,40 +68,43 @@ class Worker:
             self.env.plot_env(0)
 
         for i in range(MAX_EPISODE_STEP):
-            # try:
-            self.save_observation(observation)
+            try:
 
-            next_location, action_index = self.robot.select_next_waypoint(observation)
-            self.save_action(action_index)
+                next_location, action_index = self.robot.select_next_waypoint(observation)
 
-            node = self.robot.node_manager.id_to_node.get(self.robot.node_manager.robot_id)
-            check = np.array(node.get_neighbor_coords()).reshape(-1, 2)
-            assert next_location[0] + next_location[1] * 1j in check[:, 0] + check[:, 1] * 1j, print(self.global_step,next_location, self.robot.location, check)
-            assert next_location[0] != self.robot.location[0] or next_location[1] != self.robot.location[1]
+                node = self.robot.node_manager.id_to_node.get(self.robot.node_manager.robot_id)
+                check = np.array(node.get_neighbor_coords()).reshape(-1, 2)
 
-            reward = self.env.step(next_location, self.robot.goal_point, self.robot.updating_map_info)  # 更新env中的机器人位置、进行新的传感器检测
+                assert next_location[0] + next_location[1] * 1j in check[:, 0] + check[:, 1] * 1j, logger.warning(f"{self.global_step} invalid next_location: {next_location}, robot_location: {self.robot.location}, neighbors: {check}")
+                assert next_location[0] != self.robot.location[0] or next_location[1] != self.robot.location[1], logger.warning(f"{self.global_step} next_location same as current location, robot_location: {self.robot.location}, neighbors: {check}")
+                
+                self.save_observation(observation)
+                self.save_action(action_index)
 
-            self.robot.update_planning_state(self.env.belief_info, self.env.robot_location)
-            if np.linalg.norm(self.robot.location - self.robot.goal_point) <= END_MIN_DISTANCE: # np.array_equal(self.robot.location, self.robot.goal_point) self.robot.utility.sum() == 0
-                done = True
-                reward += 20
-                logger.info(f"{self.global_step} done_reward:{reward}")
-            self.save_reward_done(reward, done)
+                reward = self.env.step(next_location, self.robot.goal_point, self.robot.updating_map_info)  # 更新env中的机器人位置、进行新的传感器检测
 
-            observation = self.robot.get_observation()
-            self.save_next_observations(observation)
+                self.robot.update_planning_state(self.env.belief_info, self.env.robot_location)
+                if np.linalg.norm(self.robot.location - self.robot.goal_point) <= END_MIN_DISTANCE: # np.array_equal(self.robot.location, self.robot.goal_point) self.robot.utility.sum() == 0
+                    done = True
+                    reward += 20
+                    logger.info(f"{self.global_step} done_reward:{reward}")
+                self.save_reward_done(reward, done)
 
-            if self.save_image:
-                # 两个都有用
-                self.robot.plot_env()
-                self.env.plot_env(i+1)
+                observation = self.robot.get_observation()
+                self.save_next_observations(observation)
 
-            if done:
+                if self.save_image:
+                    # 两个都有用
+                    self.robot.plot_env()
+                    self.env.plot_env(i+1)
+
+                if done:
+                    break
+            except Exception as e:
+                print(f'{self.global_step} failed \n')
+                logger.error(f'{self.global_step} failed: {e}\n')
+                self._remove_incomplete_transition()
                 break
-            # except Exception as e:
-            #     print(f'{self.global_step} failed \n')
-            #     logger.error(f'{self.global_step} failed: {e}\n')
-            #     break
 
         # save metrics
         self.perf_metrics['travel_dist'] = self.env.travel_dist
@@ -135,6 +139,16 @@ class Worker:
         self.episode_buffer[12] += current_index
         self.episode_buffer[13] += current_edge
         self.episode_buffer[14] += edge_padding_mask.bool()
+
+    def _remove_incomplete_transition(self):
+        """移除不完整的transition数据，确保所有buffer长度一致"""
+        if len(self.episode_buffer[0]) == 0:
+            return
+            
+        # 找到最小长度，确保所有buffer一致
+        min_len = min(len(buf) for buf in self.episode_buffer)
+        for i in range(len(self.episode_buffer)):
+            self.episode_buffer[i] = self.episode_buffer[i][:min_len]
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@ import time
 
 import numpy as np
 import torch
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import copy
 
@@ -317,6 +319,8 @@ class Agent:
         valid_edge_count = torch.sum(edge_padding_mask == 0).item()
 
         if valid_edge_count == 0:
+            if IS_TRAIN:
+                assert False, logger.error(f"Robot Node {self.location} has no valid edges, moving directly to goal {self.goal_point}")
             # 当前节点没有边，直接朝终点移动
             print(f"Error: Robot Node {self.location} has no valid edges, moving directly to goal {self.goal_point}")
             logger.warning(f"Robot Node {self.location} has no valid edges, moving directly to goal {self.goal_point}")
@@ -361,8 +365,8 @@ class Agent:
         self.action_node_coords = self.node_coords[valid_node_indices].copy()
         
         # 从有效动作中采样
-        # sampled_idx = torch.multinomial(valid_probs, 1).long().squeeze(1)
-        sampled_idx = torch.argmax(valid_probs ,dim=1).long()
+        sampled_idx = torch.multinomial(valid_probs, 1).long().squeeze(1)
+        # sampled_idx = torch.argmax(valid_probs ,dim=1).long()
         action_index = valid_indices[sampled_idx]
         next_node_index = current_edge[0, action_index.item(), 0].item()
         next_position = self.node_coords[next_node_index]
