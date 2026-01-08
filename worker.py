@@ -75,9 +75,8 @@ class Worker:
                 node = self.robot.node_manager.id_to_node.get(self.robot.node_manager.robot_id)
                 check = np.array(node.get_neighbor_coords()).reshape(-1, 2)
 
-                assert next_location[0] + next_location[1] * 1j in check[:, 0] + check[:, 1] * 1j, logger.warning(f"{self.global_step} invalid next_location: {next_location}, robot_location: {self.robot.location}, neighbors: {check}")
-                assert next_location[0] != self.robot.location[0] or next_location[1] != self.robot.location[1], logger.warning(f"{self.global_step} next_location same as current location, robot_location: {self.robot.location}, neighbors: {check}")
-                
+                assert next_location[0] + next_location[1] * 1j in check[:, 0] + check[:, 1] * 1j, logger.warning(f"{self.global_step} invalid next_location: {next_location}, robot_location: {self.robot.location}, neighbors: {check}， dist:{self.robot.node_manager.get_node_by_id(1).neighbor_coords_dist}, id:{self.robot.node_manager.get_node_by_id(1).neighbor_ids}")
+
                 self.save_observation(observation)
                 self.save_action(action_index)
 
@@ -103,6 +102,10 @@ class Worker:
             except Exception as e:
                 print(f'{self.global_step} failed \n')
                 logger.error(f'{self.global_step} failed: {e}\n')
+                self.robot.plot_env()
+                if not self.env.plot:
+                    self.env.frame_files = []
+                self.env.plot_env(i+1)
                 self._remove_incomplete_transition()
                 break
 

@@ -53,7 +53,7 @@ MINIMUM_BUFFER_SIZE = 2000
 BATCH_SIZE = 256
 LR = 2e-5
 GAMMA = 1
-NUM_META_AGENT = 24  # how many threads does your CPU have 16
+NUM_META_AGENT = 26  # how many threads does your CPU have 16
 
 # network parameters
 NODE_INPUT_DIM = 5

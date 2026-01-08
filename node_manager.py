@@ -107,8 +107,17 @@ class NodeManager:
         if is_robot:
             node = LocalNode(self.robot_id, coords, frontiers, edges_coords, updating_map_info)
             if self.robot_id in self.id_to_node:
-                # 已存在，先删除旧的再插入新的
+                # 已存在，先清理旧节点的邻居关系，再删除
                 old_node = self.id_to_node[self.robot_id]
+                
+                # 清理旧节点的邻居关系（双向清理）
+                for neighbor_id in list(old_node.neighbor_ids):
+                    neighbor_node = self.id_to_node.get(neighbor_id)
+                    if neighbor_node:
+                        neighbor_node.remove_neighbor_by_id(self.robot_id)
+                old_node.neighbor_ids.clear()
+                old_node.neighbor_coords_dist.clear()
+                
                 old_bounds = self._make_bounds(old_node.coords)
                 self.nodes_tree.delete(self.robot_id, old_bounds)
                 self.id_to_node[self.robot_id] = node
@@ -281,7 +290,7 @@ class NodeManager:
 
     def update_node_neighbors(self, node):
         """
-        更新传入节点的邻居边
+        先检查邻居边的存在性并进行删除或修复，然后更新传入节点的邻居边
         """
         if node is None:
             return
@@ -295,7 +304,6 @@ class NodeManager:
             else:
                 # 检查对方是否也有到本节点的连接，如果没有则需要修复
                 if node.id not in neighbor_node.neighbor_ids:
-                    # 修复：添加双向连接
                     neighbor_node.add_neighbor(node.id, node.coords)
         for neighbor_id in node_id_to_remove:
             node.neighbor_ids.discard(neighbor_id)
@@ -410,9 +418,11 @@ class NodeManager:
         # 检测地图变化区域
         changed_coords = self.get_changed_region_mask(updating_map_info)
         visible_graphs = extract_visible_graph_from_map(updating_map_info)
-        # visualize_contours(updating_map_info.map, visible_graphs)
-        all_node_list = []  # 初始化所有节点列表
-        node_update_neighbors = []  # 存储需要更新邻居的节点
+
+        new_node_list = []  # 新创建的节点（需要处理 pending_edge_coords）
+        existing_node_list = []  # 已存在的节点（需要更新邻居）
+        special_node_list = []  # 特殊节点（robot、goal、cluster）
+
         # 先清空之前存在而现在不是可视点的点
         new_visible_points = get_coords_from_cell_position(
             np.array([coord for contour in visible_graphs for coord in contour["contour_points"]]), 
@@ -433,25 +443,33 @@ class NodeManager:
                         # 创建新节点并添加到字典
                         node = self.add_node_to_dict(point_coord, frontiers, egdes_coord, updating_map_info)
                         if node:
+                            if node.id == self.robot_id:
+                                continue
                             node.last_seen = self._update_counter
+                            new_node_list.append(node)  # 新节点加入列表
                 else:
                     # 如果存在则更新可见边
+                    if node.id == self.robot_id:
+                        continue
                     node.noise_flag = max(0, node.noise_flag - 1) 
                     node.last_seen = self._update_counter  # 更新最后观测时间
                     node.update_node_observable_frontiers(frontiers, updating_map_info, map_info)
                     node.pending_edge_coords = egdes_coord
-                    node_update_neighbors.append(node)
+                    existing_node_list.append(node)
         # 为终点单独增加
-        all_node_list.append(self.add_node_to_dict(robot_location, frontiers, [], updating_map_info, is_robot=True))
+        special_node_list.append(self.add_node_to_dict(robot_location, frontiers, [], updating_map_info, is_robot=True))
         
         if not self.check_node_exist_in_dict(self.goal_point):
-            all_node_list.append(self.add_node_to_dict(self.goal_point, frontiers, [], updating_map_info, is_goal=True))
+            special_node_list.append(self.add_node_to_dict(self.goal_point, frontiers, [], updating_map_info, is_goal=True))
         else:
-            all_node_list.append(self.check_node_exist_in_dict(self.goal_point))
+            special_node_list.append(self.check_node_exist_in_dict(self.goal_point))
 
         # 更新已有节点的边
-        for node in node_update_neighbors:
+        for node in existing_node_list:
             self.update_node_neighbors(node)
+        # 处理新节点的边
+        for node in new_node_list:
+            self._process_pending_edges(node)
 
         # 增加cluster的聚类节点
         if frontiers:
@@ -463,10 +481,10 @@ class NodeManager:
                     if existing_node is None:
                         node = self.add_node_to_dict(points, frontiers, [], updating_map_info)
                         if node:
-                            all_node_list.append(node)
+                            special_node_list.append(node)
 
         # 更新节点的邻居关系
-        for node in all_node_list:  # 遍历所有节点
+        for node in special_node_list:  # 遍历所有节点
             # 如果节点需要更新邻居且在传感器范围内（因为这是最新的数据）
             if np.linalg.norm(node.coords - robot_location) < (
                     UPDATING_MAP_SIZE / 2):
@@ -474,7 +492,8 @@ class NodeManager:
 
         # 在更新结束后修复可能的断边问题
         if IS_DEBUG:
-            self.repair_broken_edges()
+            self.validate_graph_integrity()
+            # self.repair_broken_edges()
 
     def validate_graph_integrity(self):
         """

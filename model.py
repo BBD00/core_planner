@@ -138,47 +138,52 @@ class Normalization(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, embedding_dim, n_head):
+    def __init__(self, embedding_dim, n_head, dropout=0.1):
         super(EncoderLayer, self).__init__()
         self.multiHeadAttention = MultiHeadAttention(embedding_dim, n_head)
         self.normalization1 = Normalization(embedding_dim)
-        self.feedForward = nn.Sequential(nn.Linear(embedding_dim, 512), nn.ReLU(inplace=True),
-                                         nn.Linear(512, embedding_dim))
+        self.feedForward = nn.Sequential(nn.Linear(embedding_dim, embedding_dim * 4), nn.ReLU(inplace=True),
+                                         nn.Linear(embedding_dim * 4, embedding_dim))
         self.normalization2 = Normalization(embedding_dim)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, src, key_padding_mask=None, attn_mask=None):
         h0 = src
         h = self.normalization1(src)
         h, _ = self.multiHeadAttention(q=h, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
-        h = h + h0
+        h = h0 + self.dropout1(h)
         h1 = h
         h = self.normalization2(h)
         h = self.feedForward(h)
-        h2 = h + h1
+        h2 = h1 + self.dropout2(h)
         return h2
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, embedding_dim, n_head):
+    def __init__(self, embedding_dim, n_head, dropout=0.1):
         super(DecoderLayer, self).__init__()
         self.multiHeadAttention = MultiHeadAttention(embedding_dim, n_head)
         self.normalization1 = Normalization(embedding_dim)
-        self.feedForward = nn.Sequential(nn.Linear(embedding_dim, 512),
+        self.normalization_memory = Normalization(embedding_dim) 
+        self.feedForward = nn.Sequential(nn.Linear(embedding_dim, embedding_dim * 4),
                                          nn.ReLU(inplace=True),
-                                         nn.Linear(512, embedding_dim))
+                                         nn.Linear(embedding_dim * 4, embedding_dim))
         self.normalization2 = Normalization(embedding_dim)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, tgt, memory, key_padding_mask=None, attn_mask=None):
         h0 = tgt
         tgt = self.normalization1(tgt)
-        memory = self.normalization1(memory)
-        h, w = self.multiHeadAttention(q=tgt, k=memory, v=memory, key_padding_mask=key_padding_mask,
+        memory_normed = self.normalization_memory(memory)
+        h, w = self.multiHeadAttention(q=tgt, k=memory_normed, v=memory_normed, key_padding_mask=key_padding_mask,
                                        attn_mask=attn_mask)
-        h = h + h0
+        h = h0 + self.dropout1(h)
         h1 = h
         h = self.normalization2(h)
         h = self.feedForward(h)
-        h2 = h + h1
+        h2 = h1 + self.dropout2(h)
         return h2, w
 
 
@@ -320,11 +325,11 @@ class QNet(nn.Module):
 
 if __name__ == "__main__":
     node_inputs = torch.randn(2,360,4)
-    node_padding_mask = torch.randn(2,1,360)
-    edge_mask = torch.randn(2,360,360)
-    current_index = torch.randint(0,360,(2,1,1))
-    current_edge = torch.randint(0,360,(2,25,1))
-    edge_padding_mask = torch.randint(0,1,(2,1,25))
+    node_padding_mask = torch.zeros(2, 1, 360)  
+    edge_mask = torch.zeros(2, 360, 360)
+    current_index = torch.randint(0, 360, (2, 1, 1))
+    current_edge = torch.randint(0, 360, (2, 25, 1))
+    edge_padding_mask = torch.zeros(2, 1, 25) 
     net = PolicyNet(4,128)
     print(net(node_inputs, node_padding_mask, edge_mask, current_index,
                 current_edge, edge_padding_mask).shape)

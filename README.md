@@ -49,6 +49,7 @@ pip install -r requirements.txt
 ```bash
 RAY_DEDUP_LOGS=0 python3 driver.py
 ```
+**注意：成功率大约在step=8000时开始增加并随后在10000时到达最高**
 
 ## 4. 项目文件说明
 

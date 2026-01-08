@@ -103,10 +103,39 @@ class Agent:
         if updating_map_top_y > max_y:
             updating_map_top_y = max_y
         # 对齐到网格
-        updating_map_origin_x = (updating_map_origin_x // self.cell_size + 1) * self.cell_size
-        updating_map_origin_y = (updating_map_origin_y // self.cell_size + 1) * self.cell_size
-        updating_map_top_x = (updating_map_top_x // self.cell_size) * self.cell_size
-        updating_map_top_y = (updating_map_top_y // self.cell_size) * self.cell_size
+        # updating_map_origin_x = (updating_map_origin_x // self.cell_size + 1) * self.cell_size
+        # updating_map_origin_y = (updating_map_origin_y // self.cell_size + 1) * self.cell_size
+        # updating_map_top_x = (updating_map_top_x // self.cell_size) * self.cell_size
+        # updating_map_top_y = (updating_map_top_y // self.cell_size) * self.cell_size
+
+        # updating_map_origin_x = np.round(updating_map_origin_x, 1)
+        # updating_map_origin_y = np.round(updating_map_origin_y, 1)
+        # updating_map_top_x = np.round(updating_map_top_x, 1)
+        # updating_map_top_y = np.round(updating_map_top_y, 1)
+        # # 计算局部地图在全局地图中的索引位置
+        # updating_map_origin = np.array([updating_map_origin_x, updating_map_origin_y])
+
+        # 计算相对于全局原点的偏移量
+        rel_origin_x = updating_map_origin_x - self.map_info.map_origin_x
+        rel_origin_y = updating_map_origin_y - self.map_info.map_origin_y
+        rel_top_x = updating_map_top_x - self.map_info.map_origin_x
+        rel_top_y = updating_map_top_y - self.map_info.map_origin_y
+
+        # 对齐到网格索引（向外扩展或向内取整，这里保持原逻辑意图，但基准变为相对原点）
+        # 使用 floor/ceil 确保覆盖范围
+        grid_origin_x = np.floor(rel_origin_x / self.cell_size) * self.cell_size
+        grid_origin_y = np.floor(rel_origin_y / self.cell_size) * self.cell_size
+        
+        # 重新计算绝对坐标
+        updating_map_origin_x = self.map_info.map_origin_x + grid_origin_x
+        updating_map_origin_y = self.map_info.map_origin_y + grid_origin_y
+        
+        # 计算 Top 对应对齐
+        grid_top_x = np.ceil(rel_top_x / self.cell_size) * self.cell_size
+        grid_top_y = np.ceil(rel_top_y / self.cell_size) * self.cell_size
+        
+        updating_map_top_x = self.map_info.map_origin_x + grid_top_x
+        updating_map_top_y = self.map_info.map_origin_y + grid_top_y
 
         updating_map_origin_x = np.round(updating_map_origin_x, 1)
         updating_map_origin_y = np.round(updating_map_origin_y, 1)
@@ -167,9 +196,12 @@ class Agent:
         # 收集所有节点的坐标
         all_node_coords = []
         all_node_ids = []
-        for id, node in self.node_manager.id_to_node.items():   # 遍历四叉树中的所有节点
+        robot_node_index = None
+        for i, (id, node) in enumerate(self.node_manager.id_to_node.items()):   # 遍历四叉树中的所有节点
             all_node_coords.append(node.coords)                 # 收集节点坐标
             all_node_ids.append(id)                              # 收集节点ID
+            if id == self.node_manager.robot_id:                # 显式查找机器人节点ID
+                robot_node_index = i
         all_node_coords = np.array(all_node_coords).reshape(-1, 2)  # 转换为numpy数组
         utility = []
         # guidepost = [] # 即是否visited
@@ -197,7 +229,12 @@ class Agent:
         distance = np.array(distance)
         stay_count = np.array(stay_count)
         # 获取对应的节点索引
-        current_index = np.argwhere(node_coords_to_check == self.location[0] + self.location[1] * 1j)[0][0]
+        if robot_node_index is not None:
+            current_index = robot_node_index
+        else:
+            # 降级方案（理论上不应发生）
+            current_index = np.argwhere(node_coords_to_check == self.location[0] + self.location[1] * 1j)[0][0]
+            
         # 找出当前节点的所有邻居索引
         neighbor_indices = np.argwhere(adjacent_matrix[current_index] == 0).reshape(-1)
         return all_node_coords, utility, distance, stay_count, adjacent_matrix, current_index, neighbor_indices
@@ -407,7 +444,7 @@ class Agent:
         plt.plot(goal_cell[0], goal_cell[1], 'ro', markersize=4, zorder=5)
         node = self.node_manager.get_node(self.location.tolist())
         for neighbor_coords in node.get_neighbor_coords():
-            end = (np.array(neighbor_coords) - self.location) + self.location
+            end = (np.array(neighbor_coords) - self.location) / 2 + self.location
             plt.plot((np.array([self.location[0], end[0]]) - self.map_info.map_origin_x) / self.cell_size,
                      (np.array([self.location[1], end[1]]) - self.map_info.map_origin_y) / self.cell_size, 'tan', zorder=1)
         # 绘制邻居边，根据动作概率着色

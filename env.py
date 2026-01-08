@@ -73,13 +73,13 @@ class Env:
         else:
             ground_truth = ground_truth.astype(int)
         # 使用block_reduce进行2x2的降采样(取最小值) 最小池化
-        if episode_index < 20000:
-            if np.random.random() > 0.3:  # 30%概率选择80-100
+        target_episode = 25000
+        if episode_index < target_episode:
+            # 概率 P = 1.0 - (当前进度)，即从100%线性降至0%
+            downsample_prob = 1.0 - (episode_index / target_episode)
+            
+            if np.random.random() < downsample_prob: 
                 ground_truth = block_reduce(ground_truth, 2, np.min)
-        else:
-            if np.random.random() < 0.3:  # 30%概率选择80-100
-                ground_truth = block_reduce(ground_truth, 2, np.min)
-        # ground_truth = block_reduce(ground_truth, 2, np.min)
         # 找到标记为208的像素点作为机器人初始位置
         robot_cell = np.nonzero(ground_truth == 208)
         # 这里交换是因为np.nonzero返回的是（行、列）索引，而x是列索引，y是行索引
@@ -87,6 +87,11 @@ class Env:
         # 将地图转换为二值地图: 值>150或者50<=值<=80的像素设为可通行(254+1)
         ground_truth = (ground_truth > 150) | ((ground_truth <= 80) & (ground_truth >= 50))
         ground_truth = ground_truth * 254 + 1
+        if episode_index > 15000:
+            free_points = np.argwhere(ground_truth == 255)
+            if len(free_points) > 0:
+                selected_index = np.random.choice(len(free_points))
+                robot_cell = np.array([free_points[selected_index][1], free_points[selected_index][0]])
         return ground_truth, robot_cell
     
     def debug_save_info(self, map_info, temp_info, updating_map_info, new_cell):
@@ -117,7 +122,7 @@ class Env:
             move_distance = min(MOVE_DISTANCE, distance)
             # 计算预期的新位置
             new_location = self.robot_location + unit_direction * move_distance
-            new_location = np.round(new_location)
+            new_location = np.round(new_location, 1)
             # 计算新位置对应的栅格坐标
             new_cell_global = np.array([round((new_location[0] - self.belief_origin_x) / self.cell_size),
                              round((new_location[1] - self.belief_origin_y) / self.cell_size)])
@@ -134,7 +139,7 @@ class Env:
                 # 沿原方向逐步尝试，找到最远的可通行点
                 for step in np.arange(int(move_distance), 0, -0.5):
                     test_location = self.robot_location + unit_direction * step.item()
-                    test_location = np.round(test_location)
+                    test_location = np.round(test_location, 1)
                     test_cell = np.array([round((test_location[0] - self.belief_origin_x) / self.cell_size),
                                         round((test_location[1] - self.belief_origin_y) / self.cell_size)])
                     new_cell = get_cell_position_from_coords(test_location, updating_map_info)
