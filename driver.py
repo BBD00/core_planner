@@ -15,7 +15,7 @@ os.environ["LOG_FILE_PATH"] = f"app.log"
 from log_config import logger
 sys.setrecursionlimit(10000)
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "5,6" 
+os.environ["CUDA_VISIBLE_DEVICES"] = "6" 
 
 # 直接使用logger
 logger.info("Welcome to RL autonomous exploration!")

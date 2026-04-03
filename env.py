@@ -93,6 +93,57 @@ class Env:
                 selected_index = np.random.choice(len(free_points))
                 robot_cell = np.array([free_points[selected_index][1], free_points[selected_index][0]])
         return ground_truth, robot_cell
+
+    # def import_ground_truth(self, episode_index):
+    #     """
+    #     导入地面真值地图
+
+    #     Args:
+    #         episode_index: 场景索引，用于选择不同的地图
+
+    #     Returns:
+    #         ground_truth: 地面真值地图
+    #         robot_cell: 机器人初始单元格位置
+    #     """
+    #     map_dir = map_path
+    #     map_list = os.listdir(map_dir)
+    #     map_index = episode_index % np.size(map_list)
+    #     # 读取地图文件、灰度图
+    #     # ground_truth = (io.imread(map_dir + '/' + map_list[map_index], 1) * 255).astype(int)
+    #     self.map_name = map_list[map_index]
+    #     ground_truth = io.imread(map_dir + '/' + map_list[map_index], as_gray=True)
+    #     # 判断数据类型：如果是浮点型（0-1范围），则乘以255；否则直接转换为int
+    #     if ground_truth.dtype in (np.float32, np.float64):
+    #         ground_truth = (ground_truth * 255).astype(int)
+    #     else:
+    #         ground_truth = ground_truth.astype(int)
+    #     # 使用block_reduce进行2x2的降采样(取最小值) 最小池化
+    #     # target_episode = 25000
+    #     # if episode_index < target_episode:
+    #     #     # 概率 P = 1.0 - (当前进度)，即从100%线性降至0%
+    #     #     downsample_prob = 1.0 - (episode_index / target_episode)
+            
+    #     #     if np.random.random() < downsample_prob: 
+    #     #         ground_truth = block_reduce(ground_truth, 2, np.min)
+    #     if episode_index < 20000:
+    #         if np.random.random() > 0.3:  # 30%概率选择80-100
+    #             ground_truth = block_reduce(ground_truth, 2, np.min)
+    #     else:
+    #         if np.random.random() < 0.3:  # 30%概率选择80-100
+    #             ground_truth = block_reduce(ground_truth, 2, np.min)
+    #     # 找到标记为208的像素点作为机器人初始位置
+    #     robot_cell = np.nonzero(ground_truth == 208)
+    #     # 这里交换是因为np.nonzero返回的是（行、列）索引，而x是列索引，y是行索引
+    #     robot_cell = np.array([np.array(robot_cell)[1, 10], np.array(robot_cell)[0, 10]])
+    #     # 将地图转换为二值地图: 值>150或者50<=值<=80的像素设为可通行(254+1)
+    #     ground_truth = (ground_truth > 150) | ((ground_truth <= 80) & (ground_truth >= 50))
+    #     ground_truth = ground_truth * 254 + 1
+    #     # if episode_index > 15000:
+    #     #     free_points = np.argwhere(ground_truth == 255)
+    #     #     if len(free_points) > 0:
+    #     #         selected_index = np.random.choice(len(free_points))
+    #     #         robot_cell = np.array([free_points[selected_index][1], free_points[selected_index][0]])
+    #     return ground_truth, robot_cell
     
     def debug_save_info(self, map_info, temp_info, updating_map_info, new_cell):
         error_info = {
@@ -134,8 +185,6 @@ class Env:
                 self.robot_location = new_location
             else:
                 # 如果目标位置不可通行，可以选择:
-                # 沿着原方向移动直到碰到障碍物前一个点
-
                 # 沿原方向逐步尝试，找到最远的可通行点
                 for step in np.arange(int(move_distance), 0, -0.5):
                     test_location = self.robot_location + unit_direction * step.item()
@@ -163,6 +212,7 @@ class Env:
             assert self.ground_truth[self.robot_cell[1],self.robot_cell[0]] == FREE, print(f"Robot in obstacle!{self.robot_cell},{self.robot_location}")
         except AssertionError:
             self.debug_save_info(self.ground_truth_info, self.belief_info, updating_map_info, new_cell)  # 只有断言失败时才会执行
+            logger.error(f"Robot in obstacle!{self.robot_cell},{self.robot_location}")
             raise  # 可选：重新抛出异常，让上层代码知道发生了错误
         # if self.plot:
         self.trajectory_x.append(self.robot_location[0])

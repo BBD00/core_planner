@@ -278,7 +278,7 @@ class Agent:
         node_inputs = np.concatenate((node_coords, node_utility, node_goal_distance, node_stay_count), axis=1)
         node_inputs = torch.FloatTensor(node_inputs).unsqueeze(0).to(self.device)
         # 填充节点数量到固定大小  360个元素
-        assert node_coords.shape[0] < NODE_PADDING_SIZE, print(node_coords.shape[0], NODE_PADDING_SIZE)
+        assert node_coords.shape[0] < NODE_PADDING_SIZE, logger.error(f"节点数量 {node_coords.shape[0]} 超过填充大小 {NODE_PADDING_SIZE}")
         padding = torch.nn.ZeroPad2d((0, 0, 0, NODE_PADDING_SIZE - n_node))
         node_inputs = padding(node_inputs)
         # 创建节点掩码  是填充的则为1

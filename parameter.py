@@ -1,14 +1,14 @@
 # saving path
-FOLDER_NAME = 'core'
+FOLDER_NAME = 'core_nodropout4'
 model_path = f'model/{FOLDER_NAME}'
 train_path = f'train/{FOLDER_NAME}'
 gifs_path = f'gifs/{FOLDER_NAME}'
-map_path = f'/data/kjt_data/code/vitr/maps'  #/data/kjt_data/code/DARE/maps_train
+map_path = f'./maps'  #/data/kjt_data/code/DARE/maps_train
 
 # save training data
 SUMMARY_WINDOW = 32  # how many training steps before writing data to tensorboard
 LOAD_MODEL = False  # do you want to load the model trained before
-SAVE_IMG_GAP = 100  # how many episodes before saving a gif
+SAVE_IMG_GAP = 500  # how many episodes before saving a gif
 
 # map and planning resolution
 CELL_SIZE = 0.4  # meter, your map resolution
@@ -53,15 +53,15 @@ MINIMUM_BUFFER_SIZE = 2000
 BATCH_SIZE = 256
 LR = 2e-5
 GAMMA = 1
-NUM_META_AGENT = 26  # how many threads does your CPU have 16
+NUM_META_AGENT = 48  # how many threads does your CPU have 16
 
 # network parameters
 NODE_INPUT_DIM = 5
 EMBEDDING_DIM = 128
 
 # Graph parameters
-K_SIZE = 360  # the number of neighboring nodes, fixed  修改现在允许与所有点相连
-NODE_PADDING_SIZE = 360  # the number of nodes will be padded to this value, need it for batch training
+K_SIZE = 512  # the number of neighboring nodes, fixed  修改现在允许与所有点相连
+NODE_PADDING_SIZE = 512  # the number of nodes will be padded to this value, need it for batch training
 
 # GPU usage
 USE_GPU = False  # do you want to collect training data using GPUs (better not)

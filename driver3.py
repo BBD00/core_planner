@@ -1,3 +1,6 @@
+"""
+    主要修改了目标网络更新逻辑
+"""
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -50,21 +53,13 @@ def main():
     global_q_net1_optimizer = optim.Adam(global_q_net1.parameters(), lr=LR)
     global_q_net2_optimizer = optim.Adam(global_q_net2.parameters(), lr=LR)
     log_alpha_optimizer = optim.Adam([log_alpha], lr=1e-4)
-    
-    # 添加学习率调度器
-    policy_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        global_policy_optimizer, T_max=1000, eta_min=LR*0.1)
-    q1_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        global_q_net1_optimizer, T_max=1000, eta_min=LR*0.1)
-    q2_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        global_q_net2_optimizer, T_max=1000, eta_min=LR*0.1)
 
     # target entropy for SAC
-    entropy_target = 0.05 * (-np.log(1 / K_SIZE))
+    # entropy_target = 0.05 * (-np.log(1 / K_SIZE))
+    entropy_target = 0.2 * (-np.log(1 / K_SIZE))
 
     curr_episode = 0
     target_q_update_counter = 1
-    train_step_counter = 0  # 跟踪训练步骤
 
     # load model and optimizer trained before
     if LOAD_MODEL:
@@ -80,16 +75,8 @@ def main():
         global_q_net1_optimizer.load_state_dict(checkpoint['q_net1_optimizer'])
         global_q_net2_optimizer.load_state_dict(checkpoint['q_net2_optimizer'])
         log_alpha_optimizer.load_state_dict(checkpoint['log_alpha_optimizer'])
-        
-        # 加载调度器状态
-        if 'policy_scheduler' in checkpoint:
-            policy_scheduler.load_state_dict(checkpoint['policy_scheduler'])
-            q1_scheduler.load_state_dict(checkpoint['q1_scheduler'])
-            q2_scheduler.load_state_dict(checkpoint['q2_scheduler'])
-            train_step_counter = checkpoint.get('train_step_counter', 0)
-            print(f"Loaded schedulers from checkpoint, train_step_counter={train_step_counter}")
-        
         curr_episode = checkpoint['episode']
+
         print("curr_episode set to ", curr_episode)
         print(log_alpha, log_alpha.requires_grad)
         print(global_policy_optimizer.state_dict()['param_groups'][0]['lr'])
@@ -238,7 +225,7 @@ def main():
 
                     global_q_net1_optimizer.zero_grad()
                     q1_loss.backward()
-                    q_grad_norm = torch.nn.utils.clip_grad_norm_(global_q_net1.parameters(), max_norm=20000,
+                    q_grad_norm = torch.nn.utils.clip_grad_norm_(global_q_net1.parameters(), max_norm=40,
                                                                  norm_type=2)
                     global_q_net1_optimizer.step()
 
@@ -248,7 +235,7 @@ def main():
 
                     global_q_net2_optimizer.zero_grad()
                     q2_loss.backward()
-                    q_grad_norm = torch.nn.utils.clip_grad_norm_(global_q_net2.parameters(), max_norm=20000,
+                    q_grad_norm = torch.nn.utils.clip_grad_norm_(global_q_net2.parameters(), max_norm=40,
                                                                  norm_type=2)
                     global_q_net2_optimizer.step()
 
@@ -259,19 +246,17 @@ def main():
                     alpha_loss.backward()
                     log_alpha_optimizer.step()
 
+                    with torch.no_grad():
+                        log_alpha.clamp_(-5.0, 2.0)
+
                     target_q_update_counter += 1
                     # print("target q update counter", target_q_update_counter % 1024)
-                
-                # 更新学习率调度器
-                policy_scheduler.step()
-                q1_scheduler.step()
-                q2_scheduler.step()
-                train_step_counter += 1
-                
-                # 打印当前学习率
-                if train_step_counter % 100 == 0:
-                    current_lr = policy_scheduler.get_last_lr()[0]
-                    print(f"Step {train_step_counter}: Current LR = {current_lr:.6f}")
+                    tau = 0.005
+                    with torch.no_grad():
+                        for target_param, param in zip(global_target_q_net1.parameters(), global_q_net1.parameters()):
+                            target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
+                        for target_param, param in zip(global_target_q_net2.parameters(), global_q_net2.parameters()):
+                            target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
 
                 # data record to be written in tensorboard
                 perf_data = []
@@ -299,15 +284,6 @@ def main():
                 policy_weights = global_policy_net.to(local_device).state_dict()
             weights_set.append(policy_weights)
 
-            # update the target q net
-            if target_q_update_counter > 64:
-                print("update target q net")
-                target_q_update_counter = 1
-                global_target_q_net1.load_state_dict(global_q_net1.state_dict())
-                global_target_q_net2.load_state_dict(global_q_net2.state_dict())
-                global_target_q_net1.eval()
-                global_target_q_net2.eval()
-
             # save the model
             if curr_episode % 32 == 0:
                 print('Saving model', end='\n')
@@ -319,10 +295,6 @@ def main():
                               "q_net1_optimizer": global_q_net1_optimizer.state_dict(),
                               "q_net2_optimizer": global_q_net2_optimizer.state_dict(),
                               "log_alpha_optimizer": log_alpha_optimizer.state_dict(),
-                              "policy_scheduler": policy_scheduler.state_dict(),
-                              "q1_scheduler": q1_scheduler.state_dict(),
-                              "q2_scheduler": q2_scheduler.state_dict(),
-                              "train_step_counter": train_step_counter,
                               "episode": curr_episode,
                               }
                 path_checkpoint = "./" + model_path + "/checkpoint.pth"

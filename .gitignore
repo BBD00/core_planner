@@ -1,7 +1,7 @@
 model/
 train/
 log/
-gifs/core/
+gifs/core*/
 *.pt
 *.csv
 *.pth
