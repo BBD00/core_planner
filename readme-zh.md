@@ -4,7 +4,7 @@
 
 本项目包含 CORE Planner (Contextual-memory Oriented Reinforcement-learning) 的训练代码实现。以下是配置环境和开始训练的步骤。
 
-**注意：这里仅包含训练代码，ROS 环境下的测试代码在：https://github.com/marmotlab/ARiADNE-ROS-Planner。**
+**注意：这里仅包含训练代码，ROS 环境下的测试代码即将开源。**
 
 ### CORE 演示
 
@@ -21,7 +21,7 @@
 下载仓库代码并进入项目目录：
 
 ```bash
-git clone https://github.com/marmotlab/ARiADNE.git
+git clone https://github.com/BBD00/core_planner.git
 cd core_planner
 ```
 

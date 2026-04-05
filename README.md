@@ -4,7 +4,7 @@ English | [中文](readme-zh.md)
 
 This repository contains the training code for CORE Planner (Contextual-memory Oriented Reinforcement-learning).
 
-**Note:** This repository only includes training code. ROS-based evaluation code is available at https://github.com/marmotlab/ARiADNE-ROS-Planner.
+**Note:** This repository only includes training code. ROS-based evaluation code is coming soon.
 
 ### Demo of CORE
 
@@ -23,7 +23,7 @@ This repository contains the training code for CORE Planner (Contextual-memory O
 ## 0. Clone the repository
 
 ```bash
-git clone https://github.com/marmotlab/ARiADNE.git
+git clone https://github.com/BBD00/core_planner.git
 cd core_planner
 ```
 

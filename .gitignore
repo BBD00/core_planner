@@ -10,3 +10,4 @@ gifs/core*/
 *.pyc
 __pycache__/
 utils_test.py
+node_manager.py
