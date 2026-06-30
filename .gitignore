@@ -1,0 +1,12 @@
+model/
+train/
+log/
+gifs/core*/
+*.pt
+*.csv
+*.pth
+*.log
+*.pkl
+*.pyc
+__pycache__/
+utils_test.py
