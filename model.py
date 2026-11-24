@@ -43,7 +43,7 @@ class SingleHeadAttention(nn.Module):
 
         if mask is not None:
             U = U.masked_fill(mask == 1, -1e8)
-        attention = torch.log_softmax(U, dim=-1)
+        attention = torch.log_softmax(U, dim=-1)  # n_batch*n_query*n_key
 
         return attention
 
@@ -87,18 +87,18 @@ class MultiHeadAttention(nn.Module):
         shape_v = (self.n_heads, n_batch, n_value, -1)
         shape_k = (self.n_heads, n_batch, n_key, -1)
         shape_q = (self.n_heads, n_batch, n_query, -1)
-        Q = torch.matmul(q_flat, self.w_query).view(shape_q)
-        K = torch.matmul(k_flat, self.w_key).view(shape_k)
-        V = torch.matmul(v_flat, self.w_value).view(shape_v)
+        Q = torch.matmul(q_flat, self.w_query).view(shape_q)  # n_heads*batch_size*n_query*key_dim
+        K = torch.matmul(k_flat, self.w_key).view(shape_k)  # n_heads*batch_size*targets_size*key_dim
+        V = torch.matmul(v_flat, self.w_value).view(shape_v)  # n_heads*batch_size*targets_size*value_dim
 
-        U = self.norm_factor * torch.matmul(Q, K.transpose(2, 3))
+        U = self.norm_factor * torch.matmul(Q, K.transpose(2, 3))  # n_heads*batch_size*n_query*targets_size 8*2*360*360
 
         if attn_mask is not None:
             attn_mask = attn_mask.view(1, n_batch, n_query, n_key).expand_as(U)
 
         if key_padding_mask is not None:
             key_padding_mask = key_padding_mask.repeat(1, n_query, 1)
-            key_padding_mask = key_padding_mask.view(1, n_batch, n_query, n_key).expand_as(U)
+            key_padding_mask = key_padding_mask.view(1, n_batch, n_query, n_key).expand_as(U)  # copy for n_heads times
 
         if attn_mask is not None and key_padding_mask is not None:
             mask = (attn_mask + key_padding_mask)
@@ -112,16 +112,20 @@ class MultiHeadAttention(nn.Module):
         if mask is not None:
             U = U.masked_fill(mask > 0, -1e8)
 
-        attention = torch.softmax(U, dim=-1)
-        heads = torch.matmul(attention, V)
+        attention = torch.softmax(U, dim=-1)  # n_heads*batch_size*n_query*targets_size
+
+        heads = torch.matmul(attention, V)  # n_heads*batch_size*n_query*value_dim
+
+        # out = heads.permute(1, 2, 0, 3).reshape(n_batch, n_query, n_dim)
+
         out = torch.mm(
             heads.permute(1, 2, 0, 3).reshape(-1, self.n_heads * self.value_dim),
-
+            # batch_size*n_query*n_heads*value_dim
             self.w_out.view(-1, self.embedding_dim)
-
+            # n_heads*value_dim*embedding_dim
         ).view(-1, n_query, self.embedding_dim)
 
-        return out, attention
+        return out, attention  # batch_size*n_query*embedding_dim
 
 
 class Normalization(nn.Module):
@@ -134,52 +138,47 @@ class Normalization(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, embedding_dim, n_head, dropout=0.1):
+    def __init__(self, embedding_dim, n_head):
         super(EncoderLayer, self).__init__()
         self.multiHeadAttention = MultiHeadAttention(embedding_dim, n_head)
         self.normalization1 = Normalization(embedding_dim)
-        self.feedForward = nn.Sequential(nn.Linear(embedding_dim, embedding_dim * 4), nn.ReLU(inplace=True),
-                                         nn.Linear(embedding_dim * 4, embedding_dim))
+        self.feedForward = nn.Sequential(nn.Linear(embedding_dim, 512), nn.ReLU(inplace=True),
+                                         nn.Linear(512, embedding_dim))
         self.normalization2 = Normalization(embedding_dim)
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, src, key_padding_mask=None, attn_mask=None):
         h0 = src
         h = self.normalization1(src)
         h, _ = self.multiHeadAttention(q=h, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
-        h = h0 + self.dropout1(h)
+        h = h + h0
         h1 = h
         h = self.normalization2(h)
         h = self.feedForward(h)
-        h2 = h1 + self.dropout2(h)
+        h2 = h + h1
         return h2
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, embedding_dim, n_head, dropout=0.1):
+    def __init__(self, embedding_dim, n_head):
         super(DecoderLayer, self).__init__()
         self.multiHeadAttention = MultiHeadAttention(embedding_dim, n_head)
         self.normalization1 = Normalization(embedding_dim)
-        self.normalization_memory = Normalization(embedding_dim)
-        self.feedForward = nn.Sequential(nn.Linear(embedding_dim, embedding_dim * 4),
+        self.feedForward = nn.Sequential(nn.Linear(embedding_dim, 512),
                                          nn.ReLU(inplace=True),
-                                         nn.Linear(embedding_dim * 4, embedding_dim))
+                                         nn.Linear(512, embedding_dim))
         self.normalization2 = Normalization(embedding_dim)
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, tgt, memory, key_padding_mask=None, attn_mask=None):
         h0 = tgt
         tgt = self.normalization1(tgt)
-        memory_normed = self.normalization_memory(memory)
-        h, w = self.multiHeadAttention(q=tgt, k=memory_normed, v=memory_normed, key_padding_mask=key_padding_mask,
+        memory = self.normalization1(memory)
+        h, w = self.multiHeadAttention(q=tgt, k=memory, v=memory, key_padding_mask=key_padding_mask,
                                        attn_mask=attn_mask)
-        h = h0 + self.dropout1(h)
+        h = h + h0
         h1 = h
         h = self.normalization2(h)
         h = self.feedForward(h)
-        h2 = h1 + self.dropout2(h)
+        h2 = h + h1
         return h2, w
 
 
@@ -241,11 +240,11 @@ class PolicyNet(nn.Module):
     def output_policy(self, current_node_feature, enhanced_current_node_feature,
                       enhanced_node_feature, current_edge, edge_padding_mask):
         embedding_dim = enhanced_node_feature.size()[2]
-
+        # current_state_feature = current_node_feature
         current_state_feature = self.current_embedding(torch.cat((enhanced_current_node_feature,
                                                                 current_node_feature), dim=-1))
         neighboring_feature = torch.gather(enhanced_node_feature, 1,
-                                           current_edge.repeat(1, 1, embedding_dim))
+                                           current_edge.repeat(1, 1, embedding_dim))    # B*25*embedding_dim
 
         logp = self.pointer(current_state_feature, neighboring_feature, edge_padding_mask)
         logp = logp.squeeze(1)
@@ -299,7 +298,7 @@ class QNet(nn.Module):
                  current_edge, edge_padding_mask):
         embedding_dim = enhanced_node_feature.size()[2]
         k_size = current_edge.size()[1]
-
+        # current_state_feature = current_node_feature
         current_state_feature = self.current_embedding(torch.cat((enhanced_current_node_feature,
                                                                  current_node_feature), dim=-1))
 
@@ -321,11 +320,11 @@ class QNet(nn.Module):
 
 if __name__ == "__main__":
     node_inputs = torch.randn(2,360,4)
-    node_padding_mask = torch.zeros(2, 1, 360)
-    edge_mask = torch.zeros(2, 360, 360)
-    current_index = torch.randint(0, 360, (2, 1, 1))
-    current_edge = torch.randint(0, 360, (2, 25, 1))
-    edge_padding_mask = torch.zeros(2, 1, 25)
+    node_padding_mask = torch.randn(2,1,360)
+    edge_mask = torch.randn(2,360,360)
+    current_index = torch.randint(0,360,(2,1,1))
+    current_edge = torch.randint(0,360,(2,25,1))
+    edge_padding_mask = torch.randint(0,1,(2,1,25))
     net = PolicyNet(4,128)
     print(net(node_inputs, node_padding_mask, edge_mask, current_index,
                 current_edge, edge_padding_mask).shape)

@@ -96,6 +96,8 @@ Please make sure:
 - the map images contain valid free / occupied regions
 - the start position marker used by the environment is consistent with the preprocessing logic in `env.py`
 
+CKPT: [Google Drive](https://drive.google.com/file/d/1D95SkwvdatmfMA34pfe4X4TXHTjhwglb/view?usp=drive_link)
+
 ## 🚀 Training
 Before launching training, you will usually want to adjust a few settings:
 

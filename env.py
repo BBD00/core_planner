@@ -63,12 +63,12 @@ class Env:
         else:
             ground_truth = ground_truth.astype(int)
 
-        target_episode = 25000
-        if episode_index < target_episode:
-
-            downsample_prob = 1.0 - (episode_index / target_episode)
-
-            if np.random.random() < downsample_prob:
+        # Use a two-stage map-size curriculum.
+        if episode_index < 20000:
+            if np.random.random() > 0.3:
+                ground_truth = block_reduce(ground_truth, 2, np.min)
+        else:
+            if np.random.random() < 0.3:
                 ground_truth = block_reduce(ground_truth, 2, np.min)
 
         robot_cell = np.nonzero(ground_truth == 208)
@@ -77,11 +77,6 @@ class Env:
 
         ground_truth = (ground_truth > 150) | ((ground_truth <= 80) & (ground_truth >= 50))
         ground_truth = ground_truth * 254 + 1
-        if episode_index > 15000:
-            free_points = np.argwhere(ground_truth == 255)
-            if len(free_points) > 0:
-                selected_index = np.random.choice(len(free_points))
-                robot_cell = np.array([free_points[selected_index][1], free_points[selected_index][0]])
         return ground_truth, robot_cell
 
 

@@ -1,9 +1,16 @@
+"""Distributed SAC training for CORE Planner."""
+
+import os
+
+# Set these before runner/worker imports initialize logging or CUDA.
+os.environ.setdefault("LOG_FILE_PATH", "app.log")
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "1")
+
 import torch
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 import ray
-import os
 import numpy as np
 import random
 
@@ -11,11 +18,9 @@ from model import PolicyNet, QNet
 from runner import RLRunner
 from parameter import *
 import sys
-os.environ["LOG_FILE_PATH"] = f"app.log"
 from log_config import logger
 sys.setrecursionlimit(10000)
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 logger.info("Welcome to CORE Planner training!")
 
@@ -51,8 +56,7 @@ def main():
     log_alpha_optimizer = optim.Adam([log_alpha], lr=1e-4)
 
     # target entropy for SAC
-
-    entropy_target = 0.2 * (-np.log(1 / K_SIZE))
+    entropy_target = 0.05 * (-np.log(1 / K_SIZE))
 
     curr_episode = 0
     target_q_update_counter = 1
@@ -221,7 +225,7 @@ def main():
 
                     global_q_net1_optimizer.zero_grad()
                     q1_loss.backward()
-                    q_grad_norm = torch.nn.utils.clip_grad_norm_(global_q_net1.parameters(), max_norm=40,
+                    q_grad_norm = torch.nn.utils.clip_grad_norm_(global_q_net1.parameters(), max_norm=20000,
                                                                  norm_type=2)
                     global_q_net1_optimizer.step()
 
@@ -231,7 +235,7 @@ def main():
 
                     global_q_net2_optimizer.zero_grad()
                     q2_loss.backward()
-                    q_grad_norm = torch.nn.utils.clip_grad_norm_(global_q_net2.parameters(), max_norm=40,
+                    q_grad_norm = torch.nn.utils.clip_grad_norm_(global_q_net2.parameters(), max_norm=20000,
                                                                  norm_type=2)
                     global_q_net2_optimizer.step()
 
@@ -242,17 +246,7 @@ def main():
                     alpha_loss.backward()
                     log_alpha_optimizer.step()
 
-                    with torch.no_grad():
-                        log_alpha.clamp_(-5.0, 2.0)
-
                     target_q_update_counter += 1
-
-                    tau = 0.005
-                    with torch.no_grad():
-                        for target_param, param in zip(global_target_q_net1.parameters(), global_q_net1.parameters()):
-                            target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
-                        for target_param, param in zip(global_target_q_net2.parameters(), global_q_net2.parameters()):
-                            target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
 
 
                 perf_data = []
@@ -279,6 +273,15 @@ def main():
             else:
                 policy_weights = global_policy_net.to(local_device).state_dict()
             weights_set.append(policy_weights)
+
+
+            if target_q_update_counter > 64:
+                print("update target q net")
+                target_q_update_counter = 1
+                global_target_q_net1.load_state_dict(global_q_net1.state_dict())
+                global_target_q_net2.load_state_dict(global_q_net2.state_dict())
+                global_target_q_net1.eval()
+                global_target_q_net2.eval()
 
 
             if curr_episode % 32 == 0:

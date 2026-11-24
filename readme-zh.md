@@ -58,6 +58,8 @@ pip install -r requirements.txt
 
 *注意：如果安装过程中遇到 PyTorch 或 Ray 相关的版本问题，请根据你的 CUDA 版本去 PyTorch 官网查找对应的安装命令。*
 
+CKPT: [Google Drive](https://drive.google.com/file/d/1D95SkwvdatmfMA34pfe4X4TXHTjhwglb/view?usp=drive_link)
+
 ## 3. 开始训练
 
 训练的入口脚本是 `driver.py`。在运行之前，你可以根据需要修改 `parameter.py` 中的超参数（如学习率、GPU 设置、训练轮数等）。
